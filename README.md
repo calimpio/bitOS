@@ -1,65 +1,48 @@
-# BitChat - Sovereign Cryptographic Terminal 📱🔒
+# BitChat - Sovereign Cryptographic Terminal
 
-BitChat es una terminal de mensajería **soberana, privada y descentralizada**. Diseñada bajo la filosofía de "Confianza Cero", BitChat elimina la necesidad de servidores centrales para el almacenamiento o enrutamiento de tus conversaciones, devolviendo el control total de la identidad y los datos al usuario.
+Terminal de mensajería **soberana y privada** que utiliza criptografía SHA-256 y redes P2P directas. BitChat no utiliza servidores centrales; toda la inteligencia y los datos residen exclusivamente en tu terminal.
 
----
+## 🚀 Características Principales
 
-## ✨ Características Principales
+### 1. Soberanía de Identidad
+- **Sin Servidores**: No hay base de datos central. Tu identidad es un par de claves criptográficas generadas localmente.
+- **Identidad Numérica**: Los usuarios se identifican únicamente por su ID Público (ej. número de celular), eliminando metadatos innecesarios.
+- **Protección Anti-Secuestro**: Sistema de validación en red que impide que un tercero reclame tu ID Público si ya estás activo. Si se detecta un intento de suplantación, tus contactos son alertados automáticamente.
 
-- **Identidad Soberana:** No requiere correos electrónicos ni servidores de registro. Tu identidad se genera matemáticamente a partir de tu número de celular y una contraseña maestra.
-- **Arquitectura P2P:** Conexiones directas entre dispositivos mediante protocolos WebRTC (PeerJS).
-- **Criptografía Robusta:** Handshakes validados mediante SHA-256 para prevenir suplantaciones de identidad.
-- **Persistencia Local:** Los mensajes y credenciales se almacenan exclusivamente en tu dispositivo usando **IndexedDB**.
-- **Sincronización Inteligente:** Envía mensajes aunque el destinatario esté offline; BitChat los entregará automáticamente en cuanto detecte que el nodo vuelve a estar en línea.
-- **Estados de Entrega:**
-  - `✓` Guardado localmente.
-  - `✓✓` Entregado al destinatario.
-  - `✓✓` (Verde) Leído y sincronizado.
+### 2. Privacidad Extrema (Handshake de 3 Capas)
+- **Confirmación Manual**: Nadie puede enviarte mensajes sin que aceptes su solicitud de conexión.
+- **Privacidad de Nickname**: Los nicknames son locales y privados. Nunca se comparten por la red; los pares solo ven IDs verificados.
+- **Handshake Criptográfico**: Intercambio automático de la **Cuarta Credencial** para establecer un canal seguro único (**Quinta ID**) entre dos terminales.
 
----
+### 3. Sincronización Multi-dispositivo P2P
+- **Sesiones Concurrentes**: Puedes tener BitChat abierto en tu PC, móvil y tablet simultáneamente con la misma cuenta.
+- **Sincronización Segura**: Transfiere tus contactos y mensajes entre tus propios dispositivos mediante un desafío criptográfico directo, sin pasar por la nube.
 
-## 🛠️ Arquitectura Técnica
+### 4. Gestión de Datos y Seguridad
+- **Mensajería Offline**: Los mensajes se guardan localmente y se reintentan enviar automáticamente en cuanto el destinatario se conecta.
+- **Deduplicación Inteligente**: Uso de UUIDs universales e índices únicos en base de datos para evitar mensajes repetidos.
+- **Control Total**: Opciones para eliminar chats individuales o borrar permanentemente la cuenta y todos los datos locales (Wipe).
 
-BitChat utiliza una jerarquía de credenciales para garantizar la seguridad:
+### 5. Interfaz Adaptativa (Responsive)
+- **Terminal Universal**: Diseño optimizado tanto para monitores de escritorio como para pantallas móviles.
+- **Modo Mobile**: Navegación fluida entre lista de contactos y chat en pantallas pequeñas.
 
-1.  **ID Público:** Tu número de celular (usado para enrutamiento).
-2.  **ID Privado:** Tu Nickname interno.
-3.  **Contraseña Maestra:** Nunca sale de tu dispositivo.
-4.  **4ta Credencial:** Un hash SHA-256 derivado de los 3 datos anteriores, intercambiado durante el handshake inicial para validar la identidad del contacto.
-5.  **5ta ID (Canal Seguro):** Un identificador de canal único generado dinámicamente entre dos nodos tras un handshake exitoso.
+## 🛠 Tecnología
+- **Motor**: .NET 8 con WebView2 (Contenedor Nativo).
+- **Core**: JavaScript Vanilla con arquitectura de Micro-Componentes (h-func).
+- **Red**: PeerJS (WebRTC) para conexiones directas punto a punto.
+- **Base de Datos**: IndexedDB (Local-first) con cifrado por derivación de contraseña maestra.
+- **Criptografía**: SHA-256 para generación de credenciales y validación de canales.
 
----
+## 📦 Instalación
 
-## 🚀 Instalación (Windows)
-
-Puedes instalar BitChat directamente desde la terminal de Windows usando **Winget**:
-
+### WinGet (Recomendado)
 ```powershell
-winget install Calimpio.BitChat
+winget install BitChat
 ```
 
-### Compilación desde el código fuente
-Si deseas compilar tu propio binario:
-1. Asegúrate de tener instalado el SDK de .NET 8.0 o superior.
-2. Ejecuta:
-   ```powershell
-   dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
-   ```
+### Manual
+Descarga el último `BitChat_v1.0.0.zip` desde la sección de [Releases](https://github.com/calimpio/bitchat/releases), extráelo y ejecuta `BitChat.exe`.
 
 ---
-
-## 🔒 Privacidad y Seguridad
-
-- **Sin Servidores:** No hay una base de datos central que pueda ser hackeada o censurada.
-- **Código Abierto:** La transparencia es la base de la seguridad criptográfica. Cualquiera puede auditar el proceso de derivación de llaves.
-- **Zero-Data Tracking:** BitChat no recolecta telemetría, metadatos ni logs de usuario.
-
----
-
-## 📜 Licencia
-
-Este proyecto está bajo la Licencia MIT. Consulta el archivo `LICENSE` para más detalles.
-
----
-
-**Desarrollado con ❤️ para la soberanía digital por Calimpio.**
+*Desarrollado por Calimpio - "Tu terminal, tu soberanía."*
