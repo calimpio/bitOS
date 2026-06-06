@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+
+PackageIdentifier: Calimpio.BitChat
+PackageVersion: 1.0.0
+InstallerType: portable
+Commands:
+  - BitChat
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/calimpio/bitchat/releases/download/v1.0.0/BitChat_v1.0.0.zip
+    InstallerSha256: 0000000000000000000000000000000000000000000000000000000000000000 # Placeholder
+ManifestType: installer
+ManifestVersion: 1.6.0

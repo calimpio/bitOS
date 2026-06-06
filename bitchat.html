@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BitChat - Sovereign Terminal</title>
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0b0f1a;
+            --card-bg: #161b2e;
+            --input-bg: #0f1322;
+            --primary: #e11d48;
+            --primary-glow: rgba(225, 29, 72, 0.4);
+            --secondary: #6366f1;
+            --success: #10b981;
+            --success-glow: rgba(16, 185, 129, 0.3);
+            --text-main: #f8fafc;
+            --text-dim: #94a3b8;
+            --border: #2d364f;
+            --accent-blue: #0ea5e9;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            background-color: var(--bg); 
+            color: var(--text-main); 
+            font-family: 'Inter', sans-serif; 
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-in { animation: fadeIn 0.3s ease-out forwards; }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+        .glass-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .terminal-input {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 16px;
+            color: var(--text-main);
+            font-family: 'Fira Code', monospace;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .terminal-input:focus { 
+            border-color: var(--secondary);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+        }
+
+        .btn {
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-weight: 700;
+            cursor: pointer;
+            border: none;
+            transition: transform 0.1s, opacity 0.2s, box-shadow 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            font-size: 14px;
+            color: white;
+        }
+        .btn:hover { opacity: 0.9; }
+        .btn:active { transform: scale(0.98); }
+        .btn-primary { background: var(--primary); box-shadow: 0 4px 12px var(--primary-glow); }
+        .btn-success { background: var(--success); box-shadow: 0 4px 12px var(--success-glow); }
+        .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text-dim); }
+        .btn-ghost:hover { border-color: var(--text-dim); color: var(--text-main); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .app-container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: radial-gradient(circle at top right, #1e1b4b, transparent 40%),
+                        radial-gradient(circle at bottom left, #1c1917, transparent 30%);
+        }
+
+        .header {
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+            background: rgba(22, 27, 46, 0.8);
+            backdrop-filter: blur(10px);
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            padding: 24px;
+            gap: 24px;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 300px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .chat-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .msg-container {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            max-width: 80%;
+            margin-bottom: 12px;
+        }
+        .msg-me { align-self: flex-end; }
+        .msg-other { align-self: flex-start; }
+
+        .bubble {
+            padding: 10px 14px;
+            border-radius: 12px;
+            font-size: 14px;
+            line-height: 1.5;
+            position: relative;
+        }
+        .msg-me .bubble { 
+            background: var(--secondary); 
+            color: white; 
+            border-bottom-right-radius: 2px;
+            box-shadow: 0 4px 10px rgba(99, 102, 241, 0.3);
+        }
+        .msg-other .bubble { 
+            background: var(--input-bg); 
+            color: var(--text-main); 
+            border: 1px solid var(--border);
+            border-bottom-left-radius: 2px;
+        }
+
+        .msg-meta {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 9px;
+            color: var(--text-dim);
+        }
+        .msg-me .msg-meta { justify-content: flex-end; }
+
+        .check { font-size: 10px; font-weight: bold; }
+        .check-saved { color: #475569; }
+        .check-sent { color: #94a3b8; }
+        .check-read { color: var(--success); text-shadow: 0 0 5px var(--success); }
+
+        .user-card {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            padding: 14px;
+            border-radius: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        .user-card:hover { border-color: var(--accent-blue); background: #1a2036; }
+        .user-card.active { border-color: var(--success); background: #162231; }
+
+        .status-badge {
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
+            padding: 2px 6px;
+            border-radius: 4px;
+            letter-spacing: 0.5px;
+        }
+        .status-online { color: var(--success); background: rgba(16, 185, 129, 0.1); }
+        .status-offline { color: var(--text-dim); background: rgba(148, 163, 184, 0.1); }
+
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+        .modal-overlay.active { opacity: 1; pointer-events: all; }
+        .modal-content {
+            width: 90%;
+            max-width: 400px;
+            transform: scale(0.9);
+            transition: transform 0.3s;
+        }
+        .modal-overlay.active .modal-content { transform: scale(1); }
+
+    </style>
+</head>
+<body>
+
+    <div id="root" style="width: 100%; height: 100%;"></div>
+
+    <script>
+        const Debug = { log(msg) { console.log(`[BitChat Debug] [${new Date().toLocaleTimeString()}] ${msg}`); } };
+
+        const Estado = {
+            pantalla: 'AUTH', 
+            error: '',
+            chatConIdPublico: null,
+            chatConNick: '',
+            historiales: {},
+            masterPassword: '',
+            showModalAdd: false,
+            lastPantalla: null,
+            me: null
+        };
+
+        const DB = {
+            db: null,
+            init() {
+                return new Promise((resolve) => {
+                    const req = indexedDB.open('bitchat_db', 3);
+                    req.onupgradeneeded = (e) => {
+                        const db = e.target.result;
+                        if (!db.objectStoreNames.contains('messages')) {
+                            const store = db.createObjectStore('messages', { keyPath: 'id', autoIncrement: true });
+                            store.createIndex('chatId', 'chatId', { unique: false });
+                            store.createIndex('status', 'status', { unique: false });
+                        }
+                        if (!db.objectStoreNames.contains('credentials')) {
+                            db.createObjectStore('credentials', { keyPath: 'id' });
+                        }
+                    };
+                    req.onsuccess = (e) => { this.db = e.target.result; resolve(); };
+                });
+            },
+            async setCreds(creds) {
+                return new Promise((resolve) => {
+                    const tx = this.db.transaction('credentials', 'readwrite');
+                    const store = tx.objectStore('credentials');
+                    store.put({ id: 'me', ...creds }).onsuccess = () => resolve();
+                });
+            },
+            async getCreds() {
+                return new Promise((resolve) => {
+                    const tx = this.db.transaction('credentials', 'readonly');
+                    const store = tx.objectStore('credentials');
+                    const req = store.get('me');
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => resolve(null);
+                });
+            },
+            async addMessage(msg) {
+                return new Promise((resolve) => {
+                    const tx = this.db.transaction('messages', 'readwrite');
+                    const store = tx.objectStore('messages');
+                    const req = store.add(msg);
+                    req.onsuccess = (e) => resolve(e.target.result);
+                });
+            },
+            async updateMessage(id, updates) {
+                return new Promise((resolve) => {
+                    const tx = this.db.transaction('messages', 'readwrite');
+                    const store = tx.objectStore('messages');
+                    const getReq = store.get(id);
+                    getReq.onsuccess = () => {
+                        if (!getReq.result) return resolve();
+                        const data = { ...getReq.result, ...updates };
+                        store.put(data).onsuccess = () => resolve();
+                    };
+                });
+            },
+            async getChatMessages(chatId) {
+                return new Promise((resolve) => {
+                    const tx = this.db.transaction('messages', 'readonly');
+                    const store = tx.objectStore('messages');
+                    const index = store.index('chatId');
+                    const req = index.getAll(chatId);
+                    req.onsuccess = () => resolve(req.result.sort((a,b) => a.time - b.time));
+                });
+            },
+            async getPendingMessages() {
+                return new Promise((resolve) => {
+                    const tx = this.db.transaction('messages', 'readonly');
+                    const store = tx.objectStore('messages');
+                    const index = store.index('status');
+                    const req = index.getAll('saved');
+                    req.onsuccess = () => resolve(req.result);
+                });
+            }
+        };
+
+        const h = (tag, props = {}, children = []) => {
+            const el = document.createElement(tag);
+            if (typeof props === 'string' || Array.isArray(props) || props instanceof HTMLElement) {
+                children = props; props = {};
+            }
+            Object.keys(props).forEach(key => {
+                if (key === 'style' && typeof props[key] === 'object') Object.assign(el.style, props[key]);
+                else if (key === 'className') el.className = props[key];
+                else if (key.startsWith('on') && typeof props[key] === 'function') el.addEventListener(key.substring(2).toLowerCase(), props[key]);
+                else el[key] = props[key];
+            });
+            const childrenArray = Array.isArray(children) ? children : [children];
+            childrenArray.forEach(child => {
+                if (child === null || child === undefined || child === false) return;
+                if (typeof child === 'string' || typeof child === 'number') el.appendChild(document.createTextNode(child));
+                else if (child instanceof HTMLElement) el.appendChild(child);
+            });
+            return el;
+        };
+
+        async function hashString(str) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(str);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        async function generarCuartaCredencial(idPublico, idPrivado, password) {
+            return await hashString(`${idPublico}:${idPrivado}:${password}`);
+        }
+
+        async function generarQuintaId(cuartaA, cuartaB) {
+            const combined = [cuartaA, cuartaB].sort().join('');
+            const hash = await hashString(combined);
+            return hash.substring(0, 10);
+        }
+
+        const BitChatAuth = {
+            async guardarMisCredenciales(idPublico, idPrivado, password) {
+                const passwordHash = await hashString(password);
+                const creds = { idPublico, idPrivado, passwordHash };
+                await DB.setCreds(creds);
+                Estado.me = creds;
+            },
+            async obtenerMisCredenciales() {
+                if (!Estado.me) Estado.me = await DB.getCreds();
+                return Estado.me;
+            },
+            async verificarPassword(inputPassword) {
+                const creds = await this.obtenerMisCredenciales();
+                if (!creds) return false;
+                const inputHash = await hashString(inputPassword);
+                return inputHash === creds.passwordHash;
+            },
+            obtenerContactos() {
+                return JSON.parse(localStorage.getItem('bitchat_auth_contacts')) || {}; 
+            },
+            guardarContacto(idPublico, idPrivado, tokenCuartaCredencial) {
+                const contactos = this.obtenerContactos();
+                contactos[idPublico] = { idPrivado, tokenCuartaCredencial };
+                localStorage.setItem('bitchat_auth_contacts', JSON.stringify(contactos));
+            }
+        };
+
+        const SDK = {
+            peer: null,
+            conexionesP2PDirectas: {}, 
+            syncInterval: null,
+
+            async inicializarNodo(idPublico) {
+                const myAuthId = `bitchat-auth-${idPublico}`;
+                if (this.peer) this.peer.destroy();
+                this.peer = new Peer(myAuthId);
+                this.peer.on('open', () => { 
+                    Debug.log("Nodo Online"); 
+                    if(this.onRefresh) this.onRefresh(); 
+                    this.startBackgroundSync();
+                });
+                this.peer.on('connection', (conn) => this._procesarEntrante(conn));
+                this.peer.on('error', (err) => Debug.log(`Error: ${err.type}`));
+            },
+
+            startBackgroundSync() {
+                if(this.syncInterval) clearInterval(this.syncInterval);
+                this.syncInterval = setInterval(async () => {
+                    const pending = await DB.getPendingMessages();
+                    const uniqueTargets = [...new Set(pending.map(m => m.chatId))];
+                    for(const target of uniqueTargets) {
+                        this.conectarAContacto(target, Estado.masterPassword);
+                    }
+                }, 15000);
+            },
+
+            async conectarAContacto(idPublicoAmigo, password) {
+                const targetAuthId = `bitchat-auth-${idPublicoAmigo}`;
+                const conn = this.peer.connect(targetAuthId);
+                conn.on('open', async () => {
+                    const misCreds = await BitChatAuth.obtenerMisCredenciales();
+                    const miCuarta = await generarCuartaCredencial(misCreds.idPublico, misCreds.idPrivado, password);
+                    conn.send({ tipo: 'HANDSHAKE_REQ', miIdPublico: misCreds.idPublico, miIdPrivado: misCreds.idPrivado, cuartaCredencial: miCuarta });
+                });
+                conn.on('data', async (paquete) => {
+                    if (paquete.tipo === 'HANDSHAKE_OK') {
+                        const misCreds = await BitChatAuth.obtenerMisCredenciales();
+                        const miCuarta = await generarCuartaCredencial(misCreds.idPublico, misCreds.idPrivado, password);
+                        const quintaId = await generarQuintaId(miCuarta, paquete.cuartaCredencialAmigo);
+                        const finalChannelId = `bitchat-safe-${[misCreds.idPublico, idPublicoAmigo].sort().join('')}-${quintaId}`;
+                        this.conexionesP2PDirectas[idPublicoAmigo] = { channelId: finalChannelId, status: 'SECURE' };
+                        const pending = await DB.getPendingMessages();
+                        for(const m of pending) {
+                            if(m.chatId === idPublicoAmigo) {
+                                conn.send({ tipo: 'MSG', id: m.id, miIdPublico: misCreds.idPublico, channel: finalChannelId, txt: m.msg, time: m.time });
+                            }
+                        }
+                        setTimeout(() => conn.close(), 1000);
+                        if(this.onRefresh) this.onRefresh();
+                    }
+                    if (paquete.tipo === 'MSG_ACK') {
+                        await DB.updateMessage(paquete.msgId, { status: paquete.read ? 'read' : 'sent' });
+                        if(this.onMessage) this.onMessage(idPublicoAmigo);
+                    }
+                });
+            },
+
+            _procesarEntrante(conn) {
+                conn.on('data', async (paquete) => {
+                    if (paquete.tipo === 'HANDSHAKE_REQ') {
+                        const contactos = BitChatAuth.obtenerContactos();
+                        const existente = contactos[paquete.miIdPublico];
+                        if (existente && existente.tokenCuartaCredencial !== paquete.cuartaCredencial) {
+                            conn.send({ tipo: 'HANDSHAKE_REJECTED' }); conn.close(); return;
+                        }
+                        if (!existente) BitChatAuth.guardarContacto(paquete.miIdPublico, paquete.miIdPrivado, paquete.cuartaCredencial);
+                        const misCreds = await BitChatAuth.obtenerMisCredenciales();
+                        const miCuarta = await generarCuartaCredencial(misCreds.idPublico, misCreds.idPrivado, Estado.masterPassword);
+                        conn.send({ tipo: 'HANDSHAKE_OK', cuartaCredencialAmigo: miCuarta });
+                        const quintaId = await generarQuintaId(miCuarta, paquete.cuartaCredencial);
+                        const finalChannelId = `bitchat-safe-${[misCreds.idPublico, paquete.miIdPublico].sort().join('')}-${quintaId}`;
+                        this.conexionesP2PDirectas[paquete.miIdPublico] = { channelId: finalChannelId, status: 'SECURE' };
+                        if(this.onRefresh) this.onRefresh();
+                    }
+                    if (paquete.tipo === 'MSG') {
+                        const chatMsg = { 
+                            chatId: paquete.miIdPublico, de: paquete.miIdPublico, 
+                            msg: paquete.txt, time: paquete.time, status: 'read', secure: !!paquete.channel 
+                        };
+                        await DB.addMessage(chatMsg);
+                        conn.send({ tipo: 'MSG_ACK', msgId: paquete.id, read: true });
+                        if(this.onMessage) this.onMessage(paquete.miIdPublico);
+                    }
+                });
+            },
+
+            async enviarMensaje(idPublicoAmigo, texto) {
+                const misCreds = await BitChatAuth.obtenerMisCredenciales();
+                const msgData = { chatId: idPublicoAmigo, de: misCreds.idPublico, msg: texto, time: Date.now(), status: 'saved', secure: true };
+                const internalId = await DB.addMessage(msgData);
+                const info = this.conexionesP2PDirectas[idPublicoAmigo];
+                if(info && info.status === 'SECURE') {
+                    const conn = this.peer.connect(`bitchat-auth-${idPublicoAmigo}`);
+                    conn.on('open', () => {
+                        conn.send({ tipo: 'MSG', id: internalId, miIdPublico: misCreds.idPublico, channel: info.channelId, txt: texto, time: msgData.time });
+                        setTimeout(() => conn.close(), 1000);
+                    });
+                }
+            }
+        };
+
+        async function loadHistory(chatId) {
+            Estado.historiales[chatId] = await DB.getChatMessages(chatId);
+            const flow = document.getElementById('chat-flow');
+            if (flow) {
+                const misCreds = await BitChatAuth.obtenerMisCredenciales();
+                const items = (Estado.historiales[chatId] || []).map(m => {
+                    const isMe = m.de === misCreds.idPublico;
+                    let checkStr = '✓'; let checkClass = 'check-saved';
+                    if(m.status === 'sent') { checkStr = '✓✓'; checkClass = 'check-sent'; }
+                    if(m.status === 'read') { checkStr = '✓✓'; checkClass = 'check-read'; }
+                    return h('div', { className: `msg-container ${isMe ? 'msg-me' : 'msg-other'}` }, [
+                        h('div', { className:'bubble' }, m.msg),
+                        h('div', { className: 'msg-meta' }, [
+                            h('span', {}, new Date(m.time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})),
+                            isMe ? h('span', { className: `check ${checkClass}` }, checkStr) : null
+                        ])
+                    ]);
+                });
+                flow.replaceChildren(...items);
+                flow.scrollTop = flow.scrollHeight;
+            } else {
+                render();
+            }
+        }
+
+        async function render() {
+            const root = document.getElementById('root');
+            const misCreds = await BitChatAuth.obtenerMisCredenciales();
+            const misContactos = BitChatAuth.obtenerContactos();
+
+            if (Estado.pantalla === 'AUTH' || Estado.pantalla === 'AUTH_LOGIN') {
+                const isLogin = (Estado.pantalla === 'AUTH_LOGIN');
+                const authContent = h('div', { className: 'glass-card fade-in', style: { width:'400px', padding:'40px' } }, [
+                    h('div', { style: { textAlign:'center', marginBottom:'32px' } }, [
+                        h('h1', { style: { color:'var(--primary)', fontSize:'28px', marginBottom:'8px'} }, 'BitChat'),
+                        h('p', { style: { color:'var(--text-dim)', fontSize:'13px'} }, isLogin ? 'Terminal de Soberanía Criptográfica' : 'Genera tu Identidad Autónoma')
+                    ]),
+                    h('div', { style: { display:'flex', flexDirection:'column', gap:'16px'} }, [
+                        !isLogin ? h('input', { id:'reg-pub', className:'terminal-input', placeholder:'Número de Celular' }) : h('div', { style: { background:'var(--input-bg)', padding:'12px', borderRadius:'8px', border:'1px solid var(--border)'} }, [
+                            h('p', { style:{fontSize:'12px', color:'var(--text-dim)'} }, 'Terminal Vinculada:'),
+                            h('p', { style:{fontSize:'14px', fontWeight:'700', color:'var(--accent-blue)'} }, misCreds ? misCreds.idPublico : '')
+                        ]),
+                        !isLogin ? h('input', { id:'reg-priv', className:'terminal-input', placeholder:'Nickname @...' }) : null,
+                        h('input', { type:'password', id:'login-pass', className:'terminal-input', placeholder:'Contraseña Maestra' }),
+                        Estado.error ? h('p', { style: { color:'var(--primary)', fontSize:'12px', textAlign:'center'} }, Estado.error) : null,
+                        h('button', { 
+                            className: isLogin ? 'btn btn-success' : 'btn btn-primary',
+                            onClick: async () => {
+                                const pass = document.getElementById('login-pass').value;
+                                if(!isLogin) {
+                                    const pub = document.getElementById('reg-pub').value;
+                                    const priv = document.getElementById('reg-priv').value;
+                                    if(!pub || !priv || !pass) return alert("Faltan datos");
+                                    await BitChatAuth.guardarMisCredenciales(pub, priv, pass);
+                                    Estado.pantalla = 'AUTH_LOGIN'; render();
+                                } else {
+                                    if(!(await BitChatAuth.verificarPassword(pass))) { Estado.error = 'Fallo de derivación'; render(); return; }
+                                    Estado.masterPassword = pass;
+                                    await SDK.inicializarNodo(misCreds.idPublico);
+                                    SDK.onRefresh = () => { if(Estado.chatConIdPublico) loadHistory(Estado.chatConIdPublico); updateContactList(); };
+                                    SDK.onMessage = (chatId) => { if(Estado.chatConIdPublico === chatId) loadHistory(chatId); updateContactList(); };
+                                    Estado.pantalla = 'DASHBOARD'; render();
+                                }
+                            }
+                        }, [isLogin ? 'Desbloquear Terminal' : 'Generar Identidad'])
+                    ])
+                ]);
+                root.replaceChildren(h('div', { style: { display:'flex', height:'100vh', width:'100vw', alignItems:'center', justifyContent:'center' } }, [authContent]));
+            } 
+            else if (Estado.pantalla === 'DASHBOARD') {
+                if (Estado.lastPantalla !== 'DASHBOARD') {
+                    const modal = h('div', { id:'modal-add', className: `modal-overlay ${Estado.showModalAdd ? 'active' : ''}` }, [
+                        h('div', { className: 'glass-card modal-content', style: { padding:'30px'} }, [
+                            h('h3', { style: { marginBottom:'20px', color:'var(--accent-blue)'} }, 'Enlazar Nuevo Nodo'),
+                            h('div', { style: { display:'flex', flexDirection:'column', gap:'16px'} }, [
+                                h('input', { id:'modal-add-id', className:'terminal-input', placeholder:'Número de Celular' }),
+                                h('div', { style: { display:'flex', gap:'12px', marginTop:'10px'} }, [
+                                    h('button', { className:'btn btn-ghost', style:{flex:1}, onClick:() => { document.getElementById('modal-add').classList.remove('active'); } }, 'Cancelar'),
+                                    h('button', { className:'btn btn-primary', style:{flex:1}, onClick:() => {
+                                            const id = document.getElementById('modal-add-id').value.trim();
+                                            if(id) { SDK.conectarAContacto(id, Estado.masterPassword); document.getElementById('modal-add').classList.remove('active'); updateContactList(); }
+                                        } 
+                                    }, 'Enlazar')
+                                ])
+                            ])
+                        ])
+                    ]);
+                    const header = h('div', { className: 'header' }, [
+                        h('div', { style: { display:'flex', alignItems:'center', gap:'12px'} }, [
+                            h('div', { style: { width:'10px', height:'10px', background:'var(--success)', borderRadius:'50%', boxShadow:'0 0 8px var(--success)'} }),
+                            h('h2', { style: { fontSize:'18px', fontWeight:'700'} }, `@${misCreds.idPrivado}`),
+                            h('span', { style: { fontSize:'12px', color:'var(--text-dim)'} }, `[ID: ${misCreds.idPublico}]`)
+                        ]),
+                        h('button', { className:'btn btn-ghost', style:{padding:'6px 12px'}, onClick:()=>location.reload() }, 'Cerrar Terminal')
+                    ]);
+                    const sidebar = h('div', { className: 'sidebar' }, [
+                        h('button', { className:'btn btn-primary', onClick:() => document.getElementById('modal-add').classList.add('active') }, '+ Añadir Nodo'),
+                        h('div', { id: 'contact-list', style: { display:'flex', flexDirection:'column', gap:'8px', overflowY:'auto'} })
+                    ]);
+                    const chatArea = h('div', { className: 'chat-area' }, [
+                        h('div', { className: 'glass-card', style: { flex:1, padding:'20px'} }, [
+                            h('div', { style:{marginBottom:'16px', borderBottom:'1px solid var(--border)', paddingBottom:'12px'} }, [
+                                h('h3', { id: 'chat-header' }, 'Seleccione un nodo operativo')
+                            ]),
+                            h('div', { id: 'chat-flow', style:{flex:1, overflowY:'auto', display:'flex', flexDirection:'column'} }),
+                            h('div', { style:{marginTop:'20px', display:'flex', gap:'12px'} }, [
+                                h('input', { id:'f-msg', className:'terminal-input', style:{flex:1}, placeholder:'Escribir comando de mensaje...' }),
+                                h('button', { 
+                                    className:'btn btn-success', id: 'btn-send',
+                                    onClick: async () => {
+                                        const el = document.getElementById('f-msg');
+                                        const txt = el.value.trim();
+                                        if(!txt || !Estado.chatConIdPublico) return;
+                                        await SDK.enviarMensaje(Estado.chatConIdPublico, txt);
+                                        el.value = ''; loadHistory(Estado.chatConIdPublico);
+                                    }
+                                }, 'Enviar')
+                            ])
+                        ])
+                    ]);
+                    root.replaceChildren(h('div', { className: 'app-container fade-in' }, [modal, header, h('div', { className: 'main-content' }, [sidebar, chatArea])]));
+                }
+                updateContactList();
+                Estado.lastPantalla = 'DASHBOARD';
+            }
+        }
+
+        function updateContactList() {
+            const list = document.getElementById('contact-list');
+            if (!list) return;
+            const misContactos = BitChatAuth.obtenerContactos();
+            const items = Object.keys(misContactos).map(cel => {
+                const isSecure = SDK.conexionesP2PDirectas[cel]?.status === 'SECURE';
+                return h('div', { 
+                    className: `user-card ${Estado.chatConIdPublico === cel ? 'active' : ''}`,
+                    onClick: () => { 
+                        Estado.chatConIdPublico = cel; 
+                        Estado.chatConNick = misContactos[cel].idPrivado;
+                        document.getElementById('chat-header').textContent = `Canal Seguro: @${Estado.chatConNick}`;
+                        loadHistory(cel);
+                        updateContactList();
+                    }
+                }, [
+                    h('div', {}, [
+                        h('p', { style:{fontWeight:'700', fontSize:'14px'} }, `@${misContactos[cel].idPrivado}`),
+                        h('p', { style:{fontSize:'11px', color:'var(--text-dim)'} }, cel)
+                    ]),
+                    h('span', { className: `status-badge ${isSecure ? 'status-online' : 'status-offline'}` }, isSecure ? 'SECURE' : 'LINK')
+                ]);
+            });
+            list.replaceChildren(...items);
+        }
+
+        DB.init().then(async () => {
+            const creds = await BitChatAuth.obtenerMisCredenciales();
+            if (creds) Estado.pantalla = 'AUTH_LOGIN';
+            render();
+        });
+    </script>
+</body>
+</html>
