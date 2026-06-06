@@ -245,6 +245,54 @@
         }
         .modal-overlay.active .modal-content { transform: scale(1); }
 
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 100%;
+                display: none;
+            }
+            .sidebar.active {
+                display: flex;
+                position: fixed;
+                top: 70px;
+                left: 0;
+                width: 100%;
+                height: calc(100% - 70px);
+                background: var(--bg);
+                z-index: 500;
+                padding: 20px;
+            }
+            .chat-area {
+                width: 100%;
+                display: none;
+            }
+            .chat-area.active {
+                display: flex;
+            }
+            .main-content {
+                padding: 10px;
+                gap: 0;
+            }
+            .header {
+                padding: 10px 16px;
+            }
+            .header h2 { font-size: 14px; }
+            .header span { display: none; }
+            .btn-back-mobile {
+                display: flex !important;
+            }
+        }
+
+        .btn-back-mobile {
+            display: none;
+            padding: 8px;
+            font-size: 18px;
+            background: transparent;
+            border: none;
+            color: var(--primary);
+            cursor: pointer;
+        }
+
     </style>
 </head>
 <body>
@@ -264,7 +312,8 @@
             showModalConfig: false,
             lastPantalla: null,
             me: null,
-            solicitudesEnviadasPendientes: new Set() 
+            solicitudesEnviadasPendientes: new Set(),
+            mostrarChatMobile: false // New: Toggle for mobile view
         };
 
         const DB = {
@@ -782,7 +831,7 @@
                             h('button', { className:'btn btn-ghost', style:{padding:'6px 12px'}, onClick:()=>location.reload() }, 'Cerrar Terminal')
                         ])
                     ]);
-                    const sidebar = h('div', { className: 'sidebar' }, [
+                    const sidebar = h('div', { id: 'sidebar', className: `sidebar ${!Estado.mostrarChatMobile ? 'active' : ''}` }, [
                         h('button', { className:'btn btn-primary', onClick:() => document.getElementById('modal-add').classList.add('active') }, '+ Añadir Nodo'),
                         h('div', { id: 'request-section', style: { display:'none', flexDirection:'column', gap:'8px'} }, [
                             h('h4', { style:{fontSize:'12px', color:'var(--primary)', marginTop:'10px'} }, 'Solicitudes Pendientes'),
@@ -791,10 +840,16 @@
                         h('h4', { style:{fontSize:'12px', color:'var(--text-dim)', marginTop:'10px'} }, 'Contactos'),
                         h('div', { id: 'contact-list', style: { display:'flex', flexDirection:'column', gap:'8px', overflowY:'auto', flex:1} })
                     ]);
-                    const chatArea = h('div', { className: 'chat-area' }, [
+                    const chatArea = h('div', { id: 'chat-area', className: `chat-area ${Estado.mostrarChatMobile ? 'active' : ''}` }, [
                         h('div', { className: 'glass-card', style: { flex:1, padding:'20px'} }, [
                             h('div', { style:{marginBottom:'16px', borderBottom:'1px solid var(--border)', paddingBottom:'12px', display:'flex', justifyContent:'space-between', alignItems:'center'} }, [
-                                h('h3', { id: 'chat-header' }, 'Seleccione un nodo operativo'),
+                                h('div', { style:{display:'flex', alignItems:'center', gap:'10px'} }, [
+                                    h('button', { 
+                                        className: 'btn-back-mobile',
+                                        onClick: () => { Estado.mostrarChatMobile = false; render(); }
+                                    }, '←'),
+                                    h('h3', { id: 'chat-header' }, 'Seleccione un nodo operativo')
+                                ]),
                                 h('button', { id: 'btn-config', className: 'btn btn-ghost', style: { padding:'4px 8px', display:'none' },
                                     onClick: () => document.getElementById('modal-config').classList.add('active')
                                 }, '⚙')
@@ -890,6 +945,8 @@
                     className: `user-card ${Estado.chatConIdPublico === cel ? 'active' : ''}`,
                     onClick: () => { 
                         Estado.chatConIdPublico = cel; 
+                        Estado.mostrarChatMobile = true; // Switch to chat view on mobile
+                        render(); // Force re-render to apply 'active' classes
                         document.getElementById('chat-header').textContent = `Canal Seguro: ${cel}`;
                         document.getElementById('btn-config').style.display = 'block';
                         loadHistory(cel); updateContactList();
