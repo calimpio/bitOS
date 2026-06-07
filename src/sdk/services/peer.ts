@@ -187,6 +187,7 @@ export const PeerService: IPeerService = {
                     time: Date.now(),
                     publicKey: paquete.publicKey
                 });
+                alert(`Nueva solicitud de conexión de: ${paquete.deIdPublico}`);
                 if (this.onRefresh) this.onRefresh();
             }
             if (paquete.tipo === 'CONNECTION_REJECTED') {
