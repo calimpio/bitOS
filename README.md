@@ -74,5 +74,9 @@ npm run build-windows-64
 winget install BitChat
 ```
 
+## 📄 Licencia
+
+Este proyecto está bajo la Licencia **MIT**. Consulta el archivo de Términos y Condiciones dentro de la aplicación para más detalles.
+
 ---
 *Desarrollado por Calimpio - "Tu terminal, tu soberanía."*
