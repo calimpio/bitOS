@@ -1,7 +1,7 @@
 import { Message, Credentials } from './types.ts';
 
 export interface AppState {
-    pantalla: 'AUTH' | 'AUTH_LOGIN' | 'DASHBOARD';
+    pantalla: 'AUTH' | 'AUTH_LOGIN' | 'DASHBOARD' | 'TERMS';
     error: string;
     chatConIdPublico: string | null;
     historiales: Record<string, Message[]>;

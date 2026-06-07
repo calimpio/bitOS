@@ -72,7 +72,15 @@ export function AuthPage(renderApp: () => void) {
                             renderApp();
                         }
                     }
-                }, [isLogin ? 'Desbloquear Terminal' : 'Generar Identidad'])
+                }, [isLogin ? 'Desbloquear Terminal' : 'Generar Identidad']),
+                h('p', { 
+                    style: { textAlign: 'center', fontSize: '11px', color: 'var(--text-dim)', cursor: 'pointer', marginTop: '10px' },
+                    onClick: () => {
+                        Estado.lastPantalla = Estado.pantalla;
+                        Estado.pantalla = 'TERMS';
+                        renderApp();
+                    }
+                }, 'Al usar BitChat, aceptas los Términos y Condiciones')
             ])
         ])
     ]);

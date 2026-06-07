@@ -2,6 +2,7 @@ import './style.css';
 import { DB, BitChatAuth, Estado } from './sdk/index.ts';
 import { AuthPage } from './pages/Auth.ts';
 import { DashboardPage } from './pages/Dashboard.ts';
+import { TermsPage } from './pages/Terms.ts';
 
 async function render() {
     const root = document.getElementById('root');
@@ -13,6 +14,9 @@ async function render() {
     } else if (Estado.pantalla === 'DASHBOARD') {
         const dashContent = await DashboardPage(render);
         root.replaceChildren(dashContent);
+    } else if (Estado.pantalla === 'TERMS') {
+        const termsContent = TermsPage(render);
+        root.replaceChildren(termsContent);
     }
 }
 

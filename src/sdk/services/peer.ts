@@ -2,6 +2,7 @@ import { Peer, DataConnection } from 'peerjs';
 import { DB } from './db.ts';
 import { BitChatAuth, generarCuartaCredencial, generarQuintaId } from './auth.ts';
 import { Estado } from '../models/state.ts';
+import { IPaqueteData } from '../models/types.ts';
 
 const Debug = { log(msg: string) { console.log(`[BitChat Debug] [${new Date().toLocaleTimeString()}] ${msg}`); } };
 
@@ -49,7 +50,8 @@ export const PeerService = {
                     foundExisting = true; clearTimeout(timeout);
                     conn.send({ tipo: 'IDENTITY_PROBE', deIdPublico: idPublico, cuarta: miCuarta });
                 });
-                conn.on('data', (paquete: any) => {
+                conn.on('data', (data: unknown) => {
+                    const paquete = data as IPaqueteData;
                     if (paquete.tipo === 'IDENTITY_CONFLICT') { probePeer.destroy(); resolve(false); }
                     if (paquete.tipo === 'IDENTITY_MATCH') { probePeer.destroy(); resolve(true); }
                 });
@@ -90,8 +92,10 @@ export const PeerService = {
     },
 
     _procesarEntrante(conn: DataConnection): void {
-        conn.on('data', async (paquete: any) => {
-            Debug.log(`Recibido: ${paquete.tipo} de ${paquete.miIdPublico || paquete.deIdPublico}`);
+        conn.on('data', async (data: unknown) => {
+            const paquete = data as IPaqueteData;
+            Debug.log(`Recibido: ${paquete.tipo} de ${paquete.miIdPublico || paquete.deIdPublico || 'unknown'}`);
+            
             if (paquete.tipo === 'IDENTITY_PROBE') {
                 const misCreds = await BitChatAuth.obtenerMisCredenciales();
                 if (!misCreds) return;
