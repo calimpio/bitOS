@@ -6,8 +6,6 @@ import { IPaqueteData } from '../models/types.ts';
 import { CryptoService } from './crypto.ts';
 import { IPeerService } from './interfaces/IPeerService.ts';
 
-const Debug = { log(msg: string) { console.log(`[BitChat Debug] [${new Date().toLocaleTimeString()}] ${msg}`); } };
-
 export const PeerService: IPeerService = {
     peer: null,
     conexionesP2PDirectas: {},
@@ -19,18 +17,15 @@ export const PeerService: IPeerService = {
         const hashedId = await hashString(idPublico);
         const myAuthId = `bc-v2-${hashedId.substring(0, 24)}`;
 
-        Debug.log(`Inicializando nodo para ${idPublico} -> PeerID: ${myAuthId}`);
         if (this.peer) this.peer.destroy();
         this.peer = new Peer(myAuthId);
 
         this.peer.on('open', (id) => {
-            Debug.log(`Nodo Online: ${id}`);
             if (this.onRefresh) this.onRefresh();
             this.startBackgroundSync();
         });
 
         this.peer.on('error', (err: { type: string }) => {
-            Debug.log(`Error Crítico del Peer: ${err.type}`);
             if (err.type === 'unavailable-id') {
                 const suffix = Math.random().toString(36).substring(7);
                 this.inicializarNodo(`${idPublico}-${suffix}`);
@@ -38,7 +33,6 @@ export const PeerService: IPeerService = {
         });
 
         this.peer.on('connection', (conn) => {
-            Debug.log(`Conexión entrante detectada desde: ${conn.peer}`);
             this._procesarEntrante(conn);
         });
     },
@@ -52,31 +46,26 @@ export const PeerService: IPeerService = {
             const targetHashedId = await hashString(idPublico);
             const targetAuthId = `bc-v2-${targetHashedId.substring(0, 24)}`;
             
-            Debug.log(`Probiendo red para ${idPublico} (Target: ${targetAuthId})`);
             let foundExisting = false;
 
             probePeer.on('open', () => {
                 const conn = probePeer.connect(targetAuthId);
                 const timeout = setTimeout(() => { 
                     if (!foundExisting) { 
-                        Debug.log("Probe timeout: No se encontró nodo existente.");
                         probePeer.destroy(); resolve(true); 
                     } 
                 }, 5000);
 
                 conn.on('open', () => {
                     foundExisting = true; clearTimeout(timeout);
-                    Debug.log("Probe: Conectado a nodo existente, enviando IDENTITY_PROBE...");
                     conn.send({ tipo: 'IDENTITY_PROBE', deIdPublico: idPublico, cuarta: miCuarta });
                 });
                 conn.on('data', (data: unknown) => {
                     const paquete = data as IPaqueteData;
-                    Debug.log(`Probe: Recibido respuesta ${paquete.tipo}`);
                     if (paquete.tipo === 'IDENTITY_CONFLICT') { probePeer.destroy(); resolve(false); }
                     if (paquete.tipo === 'IDENTITY_MATCH') { probePeer.destroy(); resolve(true); }
                 });
                 conn.on('error', (err) => { 
-                    Debug.log(`Probe error: ${err}`);
                     probePeer.destroy(); resolve(true); 
                 });
             });
@@ -88,59 +77,50 @@ export const PeerService: IPeerService = {
         this.syncInterval = setInterval(async () => {
             const pending = await DB.getPendingMessages();
             const uniqueTargets = [...new Set(pending.map(m => m.chatId))];
-            if (uniqueTargets.length > 0) Debug.log(`Sync: Intentando conectar a ${uniqueTargets.length} objetivos con mensajes pendientes.`);
             for (const target of uniqueTargets) { this.conectarAContacto(target); }
             for (const target of Array.from(Estado.solicitudesEnviadasPendientes)) { this.conectarAContacto(target); }
         }, 15000) as unknown as number;
     },
 
-    async conectarAContacto(idPublicoAmigo: string): Promise<void> {
+    async conectarAContacto(idPublicoAmigo: string, huellaEsperada?: string): Promise<void> {
         if (!this.peer || !this.peer.open) {
-            Debug.log("Error: El nodo no está listo para conectar. Esperando...");
             return;
         }
         const hashedId = await hashString(idPublicoAmigo);
         const targetAuthId = `bc-v2-${hashedId.substring(0, 24)}`;
         
-        Debug.log(`Iniciando conexión P2P hacia: ${idPublicoAmigo} (${targetAuthId})`);
         const conn = this.peer.connect(targetAuthId);
         
         const contactos = await BitChatAuth.obtenerContactos();
         if (!contactos[idPublicoAmigo]) { Estado.solicitudesEnviadasPendientes.add(idPublicoAmigo); }
 
         conn.on('open', async () => {
-            Debug.log(`Conexión ABIERTA con ${targetAuthId}`);
             const misCreds = await BitChatAuth.obtenerMisCredenciales();
             if (!misCreds) return;
 
             if (contactos[idPublicoAmigo]) {
                 if (!this.conexionesP2PDirectas[idPublicoAmigo] || this.conexionesP2PDirectas[idPublicoAmigo].status !== 'SECURE') {
                     const miCuarta = await generarCuartaCredencial(misCreds.idPublico, misCreds.idPrivado, Estado.masterPassword);
-                    Debug.log(`Enviando HANDSHAKE_START a ${idPublicoAmigo}`);
                     conn.send({ 
                         tipo: 'HANDSHAKE_START', 
                         miIdPublico: misCreds.idPublico, 
                         cuartaCredencial: miCuarta,
-                        publicKey: misCreds.publicKey
+                        publicKey: misCreds.publicKey!
                     });
                 } else { 
-                    Debug.log(`Canal ya seguro con ${idPublicoAmigo}, enviando pendientes.`);
                     this._enviarPendientes(idPublicoAmigo, conn); 
                 }
             } else { 
-                Debug.log(`Enviando CONNECTION_REQ a ${idPublicoAmigo}`);
                 conn.send({ 
                     tipo: 'CONNECTION_REQ', 
                     deIdPublico: misCreds.idPublico,
-                    publicKey: misCreds.publicKey
+                    publicKey: misCreds.publicKey!,
+                    huellaDestino: huellaEsperada
                 }); 
             }
         });
 
-        conn.on('error', (err) => {
-            Debug.log(`Fallo de conexión con ${idPublicoAmigo}: ${err}`);
-        });
-
+        conn.on('error', (err) => {});
         this._procesarEntrante(conn);
     },
 
@@ -152,16 +132,11 @@ export const PeerService: IPeerService = {
         if (!misCreds || !contactos[idAmigo] || !contactos[idAmigo].publicKey) return null;
         
         try {
-            // 1. Get my private key (decrypt it first)
             if (!Estado.aesKey || !misCreds.encryptedPrivateKey || !misCreds.privateKeyIv) return null;
             const privKeyJWKJson = await CryptoService.decrypt(Estado.aesKey, misCreds.encryptedPrivateKey, misCreds.privateKeyIv);
             const privKeyJWK = JSON.parse(privKeyJWKJson);
             const myPrivKey = await crypto.subtle.importKey('jwk', privKeyJWK, { name: 'ECDH', namedCurve: 'P-384' }, true, ['deriveKey']);
-            
-            // 2. Import friend's public key
             const friendPubKey = await CryptoService.importPublicECDHKey(contactos[idAmigo].publicKey!);
-            
-            // 3. Derive shared secret
             const sharedKey = await CryptoService.deriveSharedSecret(myPrivKey, friendPubKey);
             this.sharedKeys[idAmigo] = sharedKey;
             return sharedKey;
@@ -178,12 +153,9 @@ export const PeerService: IPeerService = {
             // SECURITY: Blacklist check
             const senderId = paquete.tipo === 'CONNECTION_REQ' ? paquete.deIdPublico : conn.peer!.replace('bc-v2-', '').split('-')[0];
             if (await DB.isBlocked(senderId)) {
-                Debug.log(`[Blacklist] Ignorando paquete de ID bloqueado: ${senderId}`);
                 return;
             }
 
-            Debug.log(`<<< RECIBIDO ${paquete.tipo} desde ${conn.peer}`);
-            
             if (paquete.tipo === 'IDENTITY_PROBE') {
                 const misCreds = await BitChatAuth.obtenerMisCredenciales();
                 if (!misCreds) return;
@@ -197,9 +169,19 @@ export const PeerService: IPeerService = {
             if (paquete.tipo === 'SECURITY_ALERT') {
                 await BitChatAuth.marcarContactoInseguro(paquete.idComprometido);
                 if (this.onRefresh) this.onRefresh();
-                alert(`¡ALERTA DE SEGURIDAD! El contacto ${paquete.idComprometido} ha reportado un intento de suplantación de identidad.`);
+                alert(`¡ALERTA DE SEGURIDAD!`);
             }
             if (paquete.tipo === 'CONNECTION_REQ') {
+                // FAST-LINK logic
+                const misCreds = await BitChatAuth.obtenerMisCredenciales();
+                if (misCreds && misCreds.publicKey && paquete.huellaDestino) {
+                    const miHuella = await CryptoService.getFingerprint(misCreds.publicKey);
+                    if (paquete.huellaDestino === miHuella) {
+                        await this.aceptarConexion(paquete.deIdPublico);
+                        return;
+                    }
+                }
+
                 await DB.addRequest({ 
                     idPublico: paquete.deIdPublico, 
                     time: Date.now(),
@@ -220,7 +202,7 @@ export const PeerService: IPeerService = {
                     tipo: 'HANDSHAKE_START', 
                     miIdPublico: misCreds.idPublico, 
                     cuartaCredencial: miCuarta,
-                    publicKey: misCreds.publicKey
+                    publicKey: misCreds.publicKey!
                 });
             }
             if (paquete.tipo === 'HANDSHAKE_START') {
@@ -232,7 +214,7 @@ export const PeerService: IPeerService = {
                     tipo: 'HANDSHAKE_FINAL', 
                     miIdPublico: misCreds.idPublico, 
                     cuartaCredencialAmigo: miCuarta,
-                    publicKey: misCreds.publicKey
+                    publicKey: misCreds.publicKey!
                 });
                 this._establecerCanalSeguro(paquete.miIdPublico, miCuarta, paquete.cuartaCredencial);
             }
@@ -246,26 +228,25 @@ export const PeerService: IPeerService = {
                 if (this.onRefresh) this.onRefresh();
             }
             if (paquete.tipo === 'MSG') {
-                const sharedKey = await this._getSharedKey(paquete.miIdPublico);
-                let decryptedText = '[Encrypted Message]';
+                const sharedKey = await this._getSharedKey(paquete.miIdPublico!);
+                let decryptedText = '[Mensaje Cifrado]';
                 if (sharedKey) {
                     try {
                         decryptedText = await CryptoService.decrypt(sharedKey, paquete.txt, paquete.iv);
-                    } catch (e) { Debug.log('Failed to decrypt E2EE message'); }
+                    } catch (e) {}
                 }
 
                 const chatMsg = {
-                    msgId: paquete.msgId, chatId: paquete.miIdPublico, de: paquete.miIdPublico,
-                    msg: decryptedText, time: paquete.time, status: 'read' as const, secure: !!paquete.channel
+                    msgId: paquete.msgId, chatId: paquete.miIdPublico!, de: paquete.miIdPublico!,
+                    msg: decryptedText, time: paquete.time, status: 'read' as const, secure: true
                 };
                 await DB.addMessage(chatMsg);
                 conn.send({ tipo: 'MSG_ACK', msgId: paquete.msgId, read: true });
-                if (this.onMessage) this.onMessage(paquete.miIdPublico);
+                if (this.onMessage) this.onMessage(paquete.miIdPublico!);
             }
             if (paquete.tipo === 'MSG_ACK') {
                 await DB.updateMessageByMsgId(paquete.msgId, { status: paquete.read ? 'read' : 'sent' });
-                const senderId = conn.peer!.replace('bc-v2-', '').split('-')[0]; // Adjust for new prefix
-                if (this.onMessage) this.onMessage(senderId);
+                if (this.onRefresh) this.onRefresh();
             }
             if (paquete.tipo === 'SYNC_REQUEST') {
                 const misCreds = await BitChatAuth.obtenerMisCredenciales();
@@ -278,15 +259,13 @@ export const PeerService: IPeerService = {
                 }
             }
             if (paquete.tipo === 'SYNC_DATA') {
-                // Synchronization requires more complex handling for encrypted contacts store
-                // For now, we manually iterate and save them
                 for (const idPublico in paquete.contactos) {
                     const c = paquete.contactos[idPublico];
                     await BitChatAuth.guardarContacto(idPublico, c.tokenCuartaCredencial, c.insecure, c.publicKey);
                 }
                 await DB.importMessages(paquete.mensajes);
                 alert("Sincronización completada con éxito.");
-                location.reload();
+                if (this.onRefresh) this.onRefresh();
             }
         });
     },
@@ -378,17 +357,15 @@ export const PeerService: IPeerService = {
         const sharedKey = await this._getSharedKey(idPublicoAmigo);
         const uniqueId = crypto.randomUUID();
         
-        // Save locally (DB.addMessage will encrypt with master key)
-        const msgData = { 
+        await DB.addMessage({ 
             msgId: uniqueId, 
             chatId: idPublicoAmigo, 
             de: misCreds.idPublico, 
             msg: texto, 
             time: Date.now(), 
-            status: 'saved' as const, 
+            status: 'saved', 
             secure: true 
-        };
-        await DB.addMessage(msgData);
+        });
 
         const info = this.conexionesP2PDirectas[idPublicoAmigo];
         if (info && info.status === 'SECURE' && sharedKey && this.peer) {
@@ -403,7 +380,7 @@ export const PeerService: IPeerService = {
                     channel: info.channelId, 
                     txt: ciphertext, 
                     iv, 
-                    time: msgData.time 
+                    time: Date.now() 
                 });
                 setTimeout(() => conn.close(), 1000);
             });
@@ -445,7 +422,7 @@ export const PeerService: IPeerService = {
                             await DB.importMessages(paquete.mensajes);
                             probePeer.destroy(); resolve(true);
                             alert("Sincronización P2P exitosa.");
-                            location.reload();
+                            if (this.onRefresh) this.onRefresh();
                         }
                     });
                 });

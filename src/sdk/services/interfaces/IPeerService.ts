@@ -33,7 +33,7 @@ export interface IPeerService {
     validarIdentidadEnRed(idPublico: string, idPrivado: string, passwordHash: string): Promise<boolean>;
 
     /** Initiates a connection request or handshake with another BitChat node. */
-    conectarAContacto(idPublicoAmigo: string): Promise<void>;
+    conectarAContacto(idPublicoAmigo: string, huellaEsperada?: string): Promise<void>;
 
     /** Internal helper to derive shared key. */
     _getSharedKey(idAmigo: string): Promise<CryptoKey | null>;

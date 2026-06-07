@@ -74,6 +74,7 @@ export interface IPaqueteConnectionReq extends IPaqueteBase {
     tipo: 'CONNECTION_REQ';
     deIdPublico: string;
     publicKey: JsonWebKey;
+    huellaDestino?: string; // Proof that the sender knows the receiver's fingerprint
 }
 
 export interface IPaqueteHandshakeStart extends IPaqueteBase {

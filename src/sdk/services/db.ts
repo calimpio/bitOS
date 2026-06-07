@@ -312,7 +312,6 @@ export const DB: IDBService = {
 
     async migratePlainMessages(): Promise<void> {
         if (!this.db || !Estado.aesKey) return;
-        console.log("[BitChat Migration] Checking for unencrypted messages...");
         const tx = this.db.transaction('messages', 'readwrite');
         const store = tx.objectStore('messages');
         const req = store.openCursor();
@@ -323,7 +322,6 @@ export const DB: IDBService = {
                 if (cursor) {
                     const m = cursor.value as Message;
                     if (!m.iv) {
-                        console.log(`[BitChat Migration] Encrypting message ${m.msgId}...`);
                         const encrypted = await this.encryptMsg(m.msg);
                         m.msg = encrypted.ciphertext;
                         m.iv = encrypted.iv;

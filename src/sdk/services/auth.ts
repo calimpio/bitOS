@@ -77,7 +77,6 @@ export const BitChatAuth: IBitChatAuth = {
             const inputHash = await hashString(inputPassword);
             if (inputHash !== creds.passwordHash) return false;
             
-            console.log("[BitChat Migration] Upgrading legacy hash to encrypted witness...");
             await this.guardarMisCredenciales(creds.idPublico, creds.idPrivado, inputPassword);
             return true;
         }
@@ -138,7 +137,6 @@ export const BitChatAuth: IBitChatAuth = {
         const legacyJSON = localStorage.getItem('bitchat_auth_contacts');
         if (!legacyJSON) return;
 
-        console.log("[BitChat Migration] Securing legacy contacts from localStorage...");
         try {
             const legacyMap: ContactMap = JSON.parse(legacyJSON);
             for (const idPublico in legacyMap) {
@@ -146,7 +144,6 @@ export const BitChatAuth: IBitChatAuth = {
                 await this.guardarContacto(idPublico, c.tokenCuartaCredencial, c.insecure, c.publicKey);
             }
             localStorage.removeItem('bitchat_auth_contacts');
-            console.log("[BitChat Migration] Contacts secured successfully.");
         } catch (e) {
             console.error("Migration failure", e);
         }
