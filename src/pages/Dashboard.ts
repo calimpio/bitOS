@@ -157,10 +157,10 @@ export async function DashboardPage(renderApp: () => void) {
         ]),
         h('div', { className: 'sidebar-footer' }, [
             h('div', { className: `nav-item ${Estado.activeApp === 'Settings' ? 'active' : ''}`, 
-                onClick: () => { Estado.activeApp = 'Settings'; renderApp(); } }, '⚙ Configuración'),
+                onClick: () => { Estado.activeApp = 'Settings'; Estado.showSidebar = false; renderApp(); } }, '⚙ Configuración'),
             h('div', { className: 'nav-item', style: { color: 'var(--primary)'}, onClick: () => location.reload() }, '🔓 Cerrar Terminal')
         ])
-    ]);
+        ]);
 
     const header = h('div', { className: 'header' }, [
         h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px' } }, [

@@ -118,7 +118,7 @@ body {
     .sidebar.active { left: 0; }
     
     .sidebar-content { overflow-y: visible; flex: none; }
-    .sidebar-footer { margin-top: auto; border-top: 1px solid rgba(255,255,255,0.05); background: transparent; padding-bottom: 30px; }
+    .sidebar-footer { margin-top: 10px; border-top: none; background: transparent; padding-bottom: 30px; padding-top: 0; }
 
     .drawer-overlay {
         position: fixed; top: 0; left: 0; width: 100%; height: 100%;
