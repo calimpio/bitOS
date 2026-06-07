@@ -9,7 +9,7 @@ export interface IPeerService {
     peer: Peer | null;
 
     /** Map of active secure P2P connections. */
-    conexionesP2PDirectas: Record<string, { channelId: string, status: string }>;
+    conexionesP2PDirectas: Record<string, { channelId: string, status: string, conn?: DataConnection }>;
 
     /** Cache of derived ECDH shared secrets for active sessions. */
     sharedKeys: Record<string, CryptoKey>;
@@ -45,7 +45,7 @@ export interface IPeerService {
     _alertarContactosDeIntentoDeSecuestro(miIdComprometido: string): Promise<void>;
 
     /** Establishes a secure P2P channel by deriving a unique ID. */
-    _establecerCanalSeguro(idAmigo: string, miCuarta: string, suCuarta: string): Promise<void>;
+    _establecerCanalSeguro(idAmigo: string, miCuarta: string, suCuarta: string, conn?: DataConnection): Promise<void>;
 
     /** Sends any locally saved messages that have not yet been sent to the target contact. */
     _enviarPendientes(chatId: string, conn: DataConnection): Promise<void>;

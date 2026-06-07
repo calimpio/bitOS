@@ -17,22 +17,38 @@ export const PeerService: IPeerService = {
         const hashedId = await hashString(idPublico);
         const myAuthId = `bc-v2-${hashedId.substring(0, 24)}`;
 
-        if (this.peer) this.peer.destroy();
-        this.peer = new Peer(myAuthId);
+        if (this.peer) {
+            this.peer.destroy();
+            this.peer = null;
+        }
+        
+        this.peer = new Peer(myAuthId, {
+            debug: 1 // Only errors
+        });
 
         this.peer.on('open', (id) => {
+            console.log('Nodo P2P abierto con ID:', id);
             if (this.onRefresh) this.onRefresh();
             this.startBackgroundSync();
         });
 
-        this.peer.on('error', (err: { type: string }) => {
+        this.peer.on('disconnected', () => {
+            console.warn('Nodo P2P desconectado del servidor de señalización. Reintentando...');
+            this.peer?.reconnect();
+        });
+
+        this.peer.on('error', (err: any) => {
+            console.error('Error en PeerJS:', err);
             if (err.type === 'unavailable-id') {
                 const suffix = Math.random().toString(36).substring(7);
                 this.inicializarNodo(`${idPublico}-${suffix}`);
+            } else if (err.type === 'server-error' || err.type === 'network') {
+                // Potential network drop, handled by 'disconnected' or manual retry if needed
             }
         });
 
         this.peer.on('connection', (conn) => {
+            console.log('Nueva conexión entrante de:', conn.peer);
             this._procesarEntrante(conn);
         });
     },
@@ -84,18 +100,30 @@ export const PeerService: IPeerService = {
 
     async conectarAContacto(idPublicoAmigo: string, huellaEsperada?: string): Promise<void> {
         if (!this.peer || !this.peer.open) {
-            alert("Error: El nodo local no está listo (Peer no abierto).");
+            console.error("Error: El nodo local no está listo (Peer no abierto).");
             return;
         }
+
+        // Reutilizar conexión si ya existe y está abierta
+        const existing = this.conexionesP2PDirectas[idPublicoAmigo];
+        if (existing && existing.conn && existing.conn.open) {
+            this._enviarPendientes(idPublicoAmigo, existing.conn);
+            return;
+        }
+
         const hashedId = await hashString(idPublicoAmigo);
         const targetAuthId = `bc-v2-${hashedId.substring(0, 24)}`;
         
-        const conn = this.peer.connect(targetAuthId);
+        console.log(`Intentando conectar a ${idPublicoAmigo} (${targetAuthId})...`);
+        const conn = this.peer.connect(targetAuthId, {
+            reliable: true
+        });
         
         const contactos = await BitChatAuth.obtenerContactos();
         if (!contactos[idPublicoAmigo]) { Estado.solicitudesEnviadasPendientes.add(idPublicoAmigo); }
 
         conn.on('open', async () => {
+            console.log(`Conexión abierta con ${idPublicoAmigo}`);
             const misCreds = await BitChatAuth.obtenerMisCredenciales();
             if (!misCreds) return;
 
@@ -109,6 +137,8 @@ export const PeerService: IPeerService = {
                         publicKey: misCreds.publicKey!
                     });
                 } else { 
+                    // Actualizar la conexión en el mapa
+                    this.conexionesP2PDirectas[idPublicoAmigo].conn = conn;
                     this._enviarPendientes(idPublicoAmigo, conn); 
                 }
             } else { 
@@ -118,13 +148,14 @@ export const PeerService: IPeerService = {
                     publicKey: misCreds.publicKey!,
                     huellaDestino: huellaEsperada
                 }); 
-                alert(`Solicitud enviada a ${idPublicoAmigo}. Esperando respuesta...`);
+                console.log(`Solicitud enviada a ${idPublicoAmigo}. Esperando respuesta...`);
             }
         });
 
         conn.on('error', (err) => {
-            alert(`Error de conexión con ${idPublicoAmigo}: ${JSON.stringify(err)}`);
+            console.error(`Error de conexión con ${idPublicoAmigo}:`, err);
         });
+
         this._procesarEntrante(conn);
     },
 
@@ -151,12 +182,27 @@ export const PeerService: IPeerService = {
     },
 
     _procesarEntrante(conn: DataConnection): void {
+        conn.on('close', () => {
+            console.log(`Conexión cerrada con ${conn.peer}`);
+            for (const id in this.conexionesP2PDirectas) {
+                if (this.conexionesP2PDirectas[id].conn === conn) {
+                    delete this.conexionesP2PDirectas[id].conn;
+                    if (this.onRefresh) this.onRefresh();
+                    break;
+                }
+            }
+        });
+
         conn.on('data', async (data: unknown) => {
             const paquete = data as IPaqueteData;
+            console.log(`Recibido paquete [${paquete.tipo}] de ${conn.peer}`);
 
             // SECURITY: Blacklist check
             const senderId = paquete.tipo === 'CONNECTION_REQ' ? paquete.deIdPublico : conn.peer!.replace('bc-v2-', '').split('-')[0];
+            // Note: split('-')[0] handles cases where a suffix was added to the peer ID
             if (await DB.isBlocked(senderId)) {
+                console.warn(`Bloqueado intento de comunicación de ID bloqueado: ${senderId}`);
+                conn.close();
                 return;
             }
 
@@ -173,7 +219,7 @@ export const PeerService: IPeerService = {
             if (paquete.tipo === 'SECURITY_ALERT') {
                 await BitChatAuth.marcarContactoInseguro(paquete.idComprometido);
                 if (this.onRefresh) this.onRefresh();
-                alert(`¡ALERTA DE SEGURIDAD!`);
+                alert(`¡ALERTA DE SEGURIDAD! El nodo ${paquete.idComprometido} podría estar comprometido.`);
             }
             if (paquete.tipo === 'CONNECTION_REQ') {
                 // FAST-LINK logic
@@ -194,7 +240,7 @@ export const PeerService: IPeerService = {
                 if (this.onRefresh) this.onRefresh();
             }
             if (paquete.tipo === 'CONNECTION_REJECTED') {
-                alert(`Tu solicitud de conexión a ${paquete.deIdPublico} ha sido rechazada.`);
+                console.log(`Solicitud rechazada por ${paquete.deIdPublico}`);
                 Estado.solicitudesEnviadasPendientes.delete(paquete.deIdPublico);
                 if (this.onRefresh) this.onRefresh();
             }
@@ -220,14 +266,14 @@ export const PeerService: IPeerService = {
                     cuartaCredencialAmigo: miCuarta,
                     publicKey: misCreds.publicKey!
                 });
-                this._establecerCanalSeguro(paquete.miIdPublico, miCuarta, paquete.cuartaCredencial);
+                this._establecerCanalSeguro(paquete.miIdPublico, miCuarta, paquete.cuartaCredencial, conn);
             }
             if (paquete.tipo === 'HANDSHAKE_FINAL') {
                 const misCreds = await BitChatAuth.obtenerMisCredenciales();
                 if (!misCreds) return;
                 const miCuarta = await generarCuartaCredencial(misCreds.idPublico, misCreds.idPrivado, Estado.masterPassword);
                 await BitChatAuth.guardarContacto(paquete.miIdPublico, paquete.cuartaCredencialAmigo, false, paquete.publicKey);
-                this._establecerCanalSeguro(paquete.miIdPublico, miCuarta, paquete.cuartaCredencialAmigo);
+                this._establecerCanalSeguro(paquete.miIdPublico, miCuarta, paquete.cuartaCredencialAmigo, conn);
                 this._enviarPendientes(paquete.miIdPublico, conn);
                 if (this.onRefresh) this.onRefresh();
             }
@@ -237,7 +283,9 @@ export const PeerService: IPeerService = {
                 if (sharedKey) {
                     try {
                         decryptedText = await CryptoService.decrypt(sharedKey, paquete.txt, paquete.iv);
-                    } catch (e) {}
+                    } catch (e) {
+                        console.error('Error descifrando mensaje:', e);
+                    }
                 }
 
                 const chatMsg = {
@@ -247,6 +295,7 @@ export const PeerService: IPeerService = {
                 await DB.addMessage(chatMsg);
                 conn.send({ tipo: 'MSG_ACK', msgId: paquete.msgId, read: true });
                 if (this.onMessage) this.onMessage(paquete.miIdPublico!);
+                if (this.onRefresh) this.onRefresh();
             }
             if (paquete.tipo === 'MSG_ACK') {
                 await DB.updateMessageByMsgId(paquete.msgId, { status: paquete.read ? 'read' : 'sent' });
@@ -268,7 +317,7 @@ export const PeerService: IPeerService = {
                     await BitChatAuth.guardarContacto(idPublico, c.tokenCuartaCredencial, c.insecure, c.publicKey);
                 }
                 await DB.importMessages(paquete.mensajes);
-                alert("Sincronización completada con éxito.");
+                console.log("Sincronización completada con éxito.");
                 if (this.onRefresh) this.onRefresh();
             }
         });
@@ -283,21 +332,26 @@ export const PeerService: IPeerService = {
             const conn = this.peer.connect(targetAuthId);
             conn.on('open', () => {
                 conn.send({ tipo: 'SECURITY_ALERT', idComprometido: miIdComprometido });
-                setTimeout(() => conn.close(), 2000);
+                setTimeout(() => conn.close(), 5000);
             });
         }
     },
 
-    async _establecerCanalSeguro(idAmigo: string, miCuarta: string, suCuarta: string): Promise<void> {
+    async _establecerCanalSeguro(idAmigo: string, miCuarta: string, suCuarta: string, conn?: DataConnection): Promise<void> {
         const misCreds = await BitChatAuth.obtenerMisCredenciales();
         if (!misCreds) return;
         const quintaId = await generarQuintaId(miCuarta, suCuarta);
         const finalChannelId = `bitchat-safe-${[misCreds.idPublico, idAmigo].sort().join('')}-${quintaId}`;
-        this.conexionesP2PDirectas[idAmigo] = { channelId: finalChannelId, status: 'SECURE' };
+        this.conexionesP2PDirectas[idAmigo] = { 
+            channelId: finalChannelId, 
+            status: 'SECURE',
+            conn: conn || this.conexionesP2PDirectas[idAmigo]?.conn
+        };
         if (this.onRefresh) this.onRefresh();
     },
 
     async _enviarPendientes(chatId: string, conn: DataConnection): Promise<void> {
+        if (!conn.open) return;
         const misCreds = await BitChatAuth.obtenerMisCredenciales();
         if (!misCreds) return;
         const info = this.conexionesP2PDirectas[chatId];
@@ -374,10 +428,10 @@ export const PeerService: IPeerService = {
         const info = this.conexionesP2PDirectas[idPublicoAmigo];
         if (info && info.status === 'SECURE' && sharedKey && this.peer) {
             const { ciphertext, iv } = await CryptoService.encrypt(sharedKey, texto);
-            const hashedId = await hashString(idPublicoAmigo);
-            const conn = this.peer.connect(`bc-v2-${hashedId.substring(0, 24)}`);
-            conn.on('open', () => {
-                conn.send({ 
+            
+            // Reutilizar conexión si está abierta
+            if (info.conn && info.conn.open) {
+                info.conn.send({ 
                     tipo: 'MSG', 
                     msgId: uniqueId, 
                     miIdPublico: misCreds.idPublico, 
@@ -386,8 +440,27 @@ export const PeerService: IPeerService = {
                     iv, 
                     time: Date.now() 
                 });
-                setTimeout(() => conn.close(), 1000);
-            });
+            } else {
+                const hashedId = await hashString(idPublicoAmigo);
+                const conn = this.peer.connect(`bc-v2-${hashedId.substring(0, 24)}`);
+                conn.on('open', () => {
+                    conn.send({ 
+                        tipo: 'MSG', 
+                        msgId: uniqueId, 
+                        miIdPublico: misCreds.idPublico, 
+                        channel: info.channelId, 
+                        txt: ciphertext, 
+                        iv, 
+                        time: Date.now() 
+                    });
+                    // NO CERRAR AUTOMÁTICAMENTE
+                    this.conexionesP2PDirectas[idPublicoAmigo].conn = conn;
+                });
+                this._procesarEntrante(conn);
+            }
+        } else {
+            // Intentar conectar si no hay canal seguro
+            this.conectarAContacto(idPublicoAmigo);
         }
     },
 
