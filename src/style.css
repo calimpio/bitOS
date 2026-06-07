@@ -120,7 +120,7 @@ body {
     .btn-menu-mobile { display: flex !important; }
     
     .bit-chat-container { flex-direction: column !important; position: relative; }
-    .contact-list-pane { width: 100% !important; flex: 1 !important; border-right: none !important; padding-right: 0 !important; }
+    .contact-list-pane { width: 100% !important; flex: 1 !important; border-right: none !important; padding-right: 0 !important; display: flex !important; }
     
     .chat-area-pane {
         position: fixed; top: 0; left: 0; width: 100%; height: 100vh; height: 100dvh;
