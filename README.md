@@ -19,6 +19,11 @@ Esta versión ha sido modernizada a una arquitectura **TypeScript Local-First** 
 ### 3. Sincronización P2P
 - **Sincronización Segura**: Transfiere contactos y mensajes entre tus propios dispositivos mediante desafíos criptográficos directos.
 
+## 🌐 Acceso Web
+
+Puedes utilizar la terminal directamente desde tu navegador sin instalar nada:
+👉 **[Abrir BitChat Web](https://calimpio.github.io/bitchat/bitchat.html)**
+
 ## 🛠 Arquitectura Técnica
 
 El proyecto se divide en una arquitectura moderna de frontend TypeScript y un contenedor nativo para Windows:
