@@ -55,7 +55,8 @@ export const BitChatAuth: IBitChatAuth = {
             salt: saltBase64,
             publicKey: publicKeyJWK,
             encryptedPrivateKey: encryptedPriv,
-            privateKeyIv: privIv
+            privateKeyIv: privIv,
+            createdAt: Date.now()
         };
         
         await DB.setCreds(creds);

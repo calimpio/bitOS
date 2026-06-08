@@ -8,6 +8,7 @@ export interface Credentials {
     publicKey?: JsonWebKey;
     encryptedPrivateKey?: string; // base64
     privateKeyIv?: string; // base64
+    createdAt: number;
 }
 
 export interface Contact {
@@ -67,6 +68,7 @@ export interface IPaqueteIdentityProbe extends IPaqueteBase {
     deviceId?: string; // Persistent unique ID for the terminal
     deviceLabel?: string; // Environment info (e.g., "Windows App", "Chrome")
     publicKey?: JsonWebKey;
+    createdAt?: number;
 }
 
 export interface IPaqueteIdentityMatch extends IPaqueteBase {
@@ -75,6 +77,7 @@ export interface IPaqueteIdentityMatch extends IPaqueteBase {
     deviceLabel?: string;
     publicKey?: JsonWebKey;
     creds?: Credentials;
+    createdAt?: number;
 }
 
 export interface IPaqueteSecurityAlert extends IPaqueteBase {
@@ -179,6 +182,7 @@ export type IPaqueteData =
         lastSeen: number;
         publicKey?: JsonWebKey;
         peerId?: string; // Current session signaling ID
+        accountCreatedAt?: number;
     }
 
     export interface AppState {

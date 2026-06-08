@@ -100,9 +100,16 @@ export const PeerService: IPeerService = {
             probePeer.on('open', () => {
                 const conn = probePeer.connect(targetAuthId);
                 const timeout = setTimeout(() => { if (!foundExisting) { probePeer.destroy(); resolve(true); } }, 5000);
-                conn.on('open', () => {
+                conn.on('open', async () => {
                     foundExisting = true; clearTimeout(timeout);
-                    conn.send({ tipo: 'IDENTITY_PROBE', deIdPublico: idPublico, cuarta: miCuarta, nonce: crypto.randomUUID() });
+                    const localCreds = await BitChatAuth.obtenerMisCredenciales();
+                    conn.send({ 
+                        tipo: 'IDENTITY_PROBE', 
+                        deIdPublico: idPublico, 
+                        cuarta: miCuarta, 
+                        nonce: crypto.randomUUID(),
+                        createdAt: localCreds?.createdAt
+                    });
                 });
                 conn.on('data', (data: unknown) => {
                     const paquete = data as IPaqueteData;
@@ -146,7 +153,8 @@ export const PeerService: IPeerService = {
                 nonce: crypto.randomUUID(),
                 deviceId: this.localDeviceId,
                 deviceLabel: this.localEnvLabel,
-                publicKey: misCreds.publicKey
+                publicKey: misCreds.publicKey,
+                createdAt: misCreds.createdAt
             });
         });
         this._procesarEntrante(conn);
@@ -231,8 +239,29 @@ export const PeerService: IPeerService = {
                 if (paquete.cuarta === miCuarta) {
                     const remoteDeviceId = paquete.deviceId || conn.peer!.replace('bc-v2-', '').split('-')[0];
                     if (this.deviceConns) this.deviceConns[remoteDeviceId] = conn;
-                    await DB.addDevice({ deviceId: remoteDeviceId, idPublico: paquete.deIdPublico, label: paquete.deviceLabel || 'Otra Terminal', isOnline: true, lastSeen: Date.now(), peerId: conn.peer, publicKey: paquete.publicKey });
-                    conn.send({ tipo: 'IDENTITY_MATCH', deviceId: this.localDeviceId, deviceLabel: this.localEnvLabel, publicKey: misCreds.publicKey, creds: misCreds });
+                    
+                    await DB.addDevice({ 
+                        deviceId: remoteDeviceId, 
+                        idPublico: paquete.deIdPublico, 
+                        label: paquete.deviceLabel || 'Otra Terminal', 
+                        isOnline: true, 
+                        lastSeen: Date.now(), 
+                        peerId: conn.peer, 
+                        publicKey: paquete.publicKey,
+                        accountCreatedAt: paquete.createdAt
+                    });
+
+                    // Si somos más antiguos, compartimos nuestras credenciales (llaves)
+                    const soyMasAntiguo = !paquete.createdAt || misCreds.createdAt < paquete.createdAt;
+                    
+                    conn.send({ 
+                        tipo: 'IDENTITY_MATCH', 
+                        deviceId: this.localDeviceId, 
+                        deviceLabel: this.localEnvLabel, 
+                        publicKey: misCreds.publicKey, 
+                        creds: soyMasAntiguo ? misCreds : undefined,
+                        createdAt: misCreds.createdAt
+                    });
                     if (this.onRefresh) this.onRefresh();
                 } else { conn.send({ tipo: 'IDENTITY_CONFLICT' }); this._alertarContactosDeIntentoDeSecuestro(misCreds.idPublico); }
             }
@@ -240,7 +269,23 @@ export const PeerService: IPeerService = {
                 const remoteDeviceId = paquete.deviceId || conn.peer?.replace('bc-v2-', '').split('-')[0];
                 if (remoteDeviceId) {
                     if (this.deviceConns) this.deviceConns[remoteDeviceId] = conn;
-                    await DB.addDevice({ deviceId: remoteDeviceId, idPublico: conn.peer!.replace('bc-v2-', '').split('-')[0], label: paquete.deviceLabel || 'Otra Terminal', isOnline: true, lastSeen: Date.now(), peerId: conn.peer, publicKey: paquete.publicKey });
+                    await DB.addDevice({ 
+                        deviceId: remoteDeviceId, 
+                        idPublico: conn.peer!.replace('bc-v2-', '').split('-')[0], 
+                        label: paquete.deviceLabel || 'Otra Terminal', 
+                        isOnline: true, 
+                        lastSeen: Date.now(), 
+                        peerId: conn.peer, 
+                        publicKey: paquete.publicKey,
+                        accountCreatedAt: paquete.createdAt
+                    });
+
+                    // Si nos envían credenciales, es porque el otro dispositivo es el "autorizado" (más antiguo)
+                    if (paquete.creds) {
+                        console.log(`[SYNC] Adoptando credenciales de dispositivo más antiguo (${remoteDeviceId})`);
+                        await DB.setCreds(paquete.creds);
+                        useStore.getState().setMe(paquete.creds);
+                    }
 
                     if (!this.syncSessions[remoteDeviceId]) {
                         this.syncSessions[remoteDeviceId] = true;

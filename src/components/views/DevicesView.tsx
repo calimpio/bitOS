@@ -21,7 +21,8 @@ export const DevicesView: React.FC = () => {
                 label: 'Este Dispositivo (Principal)',
                 isOnline: PeerService.peer?.open || false,
                 lastSeen: Date.now(),
-                publicKey: me?.publicKey
+                publicKey: me?.publicKey,
+                accountCreatedAt: me?.createdAt
             },
             ...storedDevices.map((d: any) => ({
                 ...d,
@@ -103,6 +104,11 @@ export const DevicesView: React.FC = () => {
                             <div>
                                 <h4 style={{ color: 'var(--accent-blue)', marginBottom: '5px' }}>{device.label}</h4>
                                 <p style={{ fontSize: '12px', color: 'var(--text-dim)' }}>ID Dispositivo: {device.deviceId}</p>
+                                {device.accountCreatedAt && (
+                                    <p style={{ fontSize: '11px', color: 'var(--accent-blue)', marginTop: '4px' }}>
+                                        Cuenta creada el: {new Date(device.accountCreatedAt).toLocaleString()}
+                                    </p>
+                                )}
                                 <p style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '4px' }}>
                                     Visto por última vez: {new Date(device.lastSeen).toLocaleString()}
                                 </p>
