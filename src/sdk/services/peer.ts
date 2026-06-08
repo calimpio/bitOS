@@ -583,15 +583,30 @@ export const PeerService: IPeerService = {
         const chatMsg: Message = { msgId: uniqueId, chatId: idPublicoAmigo, de: misCreds.idPublico, msg: texto, time: Date.now(), status: 'saved', secure: true };
         await DB.addMessage(chatMsg);
         this._replicateMessage(chatMsg);
+
         const info = this.conexionesP2PDirectas[idPublicoAmigo];
         if (info?.status === 'SECURE' && sharedKey && this.peer) {
             const { ciphertext, iv } = await CryptoService.encrypt(sharedKey, texto);
-            if (info.conn?.open) { info.conn.send({ tipo: 'MSG', msgId: uniqueId, miIdPublico: misCreds.idPublico, channel: info.channelId, txt: ciphertext, iv, time: Date.now() }); }
-            else {
-                const hashedId = await hashString(idPublicoAmigo);
-                const conn = this.peer.connect(`bc-v2-${hashedId.substring(0, 24)}`);
-                conn.on('open', () => { conn.send({ tipo: 'MSG', msgId: uniqueId, miIdPublico: misCreds.idPublico, channel: info.channelId, txt: ciphertext, iv, time: Date.now() }); this.conexionesP2PDirectas[idPublicoAmigo].conn = conn; });
-                this._procesarEntrante(conn);
+            try {
+                if (info.conn?.open) {
+                    await this.request(info.conn, 'MSG', { msgId: uniqueId, miIdPublico: misCreds.idPublico, channel: info.channelId, txt: ciphertext, iv, time: Date.now() });
+                } else {
+                    const hashedId = await hashString(idPublicoAmigo);
+                    const conn = this.peer.connect(`bc-v2-${hashedId.substring(0, 24)}`);
+                    await new Promise((resolve, reject) => {
+                        conn.on('open', async () => {
+                            try {
+                                await this.request(conn, 'MSG', { msgId: uniqueId, miIdPublico: misCreds.idPublico, channel: info.channelId, txt: ciphertext, iv, time: Date.now() });
+                                this.conexionesP2PDirectas[idPublicoAmigo].conn = conn;
+                                resolve(true);
+                            } catch (e) { reject(e); }
+                        });
+                        conn.on('error', reject);
+                        this._procesarEntrante(conn);
+                    });
+                }
+            } catch (e) {
+                console.error(`[RPC] Error enviando mensaje a ${idPublicoAmigo}:`, e);
             }
         } else { this.conectarAContacto(idPublicoAmigo); }
     },
