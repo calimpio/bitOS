@@ -23,6 +23,12 @@ export interface IPeerService {
     /** Callback triggered when a new message is received. */
     onMessage: ((chatId: string) => void) | null;
 
+    /** Persistent ID for this terminal. */
+    localDeviceId?: string;
+
+    /** Human-readable label for the environment (e.g. "Windows App"). */
+    localEnvLabel?: string;
+
     /** Initializes the P2P node with the given Public ID. */
     inicializarNodo(idPublico: string, useSuffix?: boolean): Promise<void>;
 

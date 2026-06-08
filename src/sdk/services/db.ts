@@ -77,8 +77,6 @@ export const DB: IDBService = {
         });
     },
 
-    // ... (rest of methods)
-
     async addBlock(idPublico: string): Promise<void> {
         return new Promise((resolve) => {
             if (!this.db) return resolve();
@@ -221,13 +219,15 @@ export const DB: IDBService = {
                 const checkReq = index.get(msg.msgId);
                 checkReq.onsuccess = () => {
                     if (checkReq.result) {
-                        const existing = checkReq.result;
-                        // REPARACIÓN: Si el mensaje existente era ilegible y el nuevo viene legible, lo actualizamos.
+                        const existing = checkReq.result as Message;
+                        // REPARACIÓN: Si el mensaje existente era ilegible y el nuevo viene legible, actualizamos.
                         const existingIsEncrypted = existing.msg === '[Mensaje Cifrado]' || !!existing.ciphertext;
                         const newIsDecrypted = msg.msg !== '[Mensaje Cifrado]' && !msg.ciphertext;
 
                         if (existingIsEncrypted && newIsDecrypted) {
-                            const updated = { ...existing, ...msg };
+                            const updated: Message = { ...existing, ...msg };
+                            // Limpieza estricta de metadatos de transporte antiguo
+                            if (!msg.ciphertext) updated.ciphertext = undefined;
                             store.put(updated).onsuccess = () => resolve(existing.id);
                         } else {
                             resolve(existing.id);
@@ -377,20 +377,14 @@ export const DB: IDBService = {
                 if (cursor) {
                     const m = cursor.value as Message;
                     
-                    // CASO 1: Mensaje en texto plano (sin IV)
-                    // CASO 2: Mensaje con cifrado P2P (tiene IV y ciphertext de transporte)
-                    // CASO 3: Mensaje que era ilegible pero ahora tenemos la llave (ya manejado por addMessage en reparación)
-                    
                     const isPlain = !m.iv;
                     const isP2PTransport = !!m.ciphertext && m.msg !== '[Mensaje Cifrado]';
 
                     if (isPlain || isP2PTransport) {
-                        // Si era P2PTransport, ya está descifrado en m.msg gracias a PeerService
-                        // Si era Plain, el texto está directamente en m.msg
                         const encrypted = await this.encryptMsg(m.msg);
                         m.msg = encrypted.ciphertext;
                         m.iv = encrypted.iv;
-                        delete m.ciphertext; // Limpiamos rastro de transporte
+                        delete m.ciphertext; 
                         cursor.update(m);
                         console.log(`[MIGRACIÓN] Mensaje ${m.msgId} migrado a persistencia unificada.`);
                     }
