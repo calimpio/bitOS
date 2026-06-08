@@ -49,7 +49,7 @@ export const PeerService: IPeerService = {
         }
         
         this.peer = new Peer(fullId, {
-            debug: 1 // Only errors
+            debug: 0 // Quiet
         });
 
         this.peer.on('open', (id) => {
@@ -75,7 +75,11 @@ export const PeerService: IPeerService = {
                 return; 
             }
 
-            console.error('Error en PeerJS:', err);
+            // Only log actual errors, not connectivity issues with offline peers
+            if (err.type !== 'peer-unavailable' && err.type !== 'disconnected') {
+                console.error('Error en PeerJS:', err);
+            }
+            
             if (err.type === 'unavailable-id') {
                 this.inicializarNodo(idPublico, true); // Retry with new random suffix
             }
@@ -326,7 +330,7 @@ export const PeerService: IPeerService = {
             if (paquete.tipo === 'IDENTITY_MATCH') {
                 console.log('Sincronización de Identidad Exitosa con dispositivo remoto.');
                 const remoteDeviceId = paquete.deviceId || conn.peer?.replace('bc-v2-', '').split('-')[0];
-                const ownerIdPublico = conn.peer?.replace('bc-v2-', '').split('-')[0]; // Fallback to hash if no deviceId
+                const ownerIdPublico = conn.peer?.replace('bc-v2-', '').split('-')[0]; 
                 if (remoteDeviceId) {
                     await DB.addDevice({
                         deviceId: remoteDeviceId,
@@ -336,6 +340,24 @@ export const PeerService: IPeerService = {
                         lastSeen: Date.now(),
                         peerId: conn.peer
                     });
+                    
+                    // AUTO-SYNC: If we just matched identity, request a delta/repair sync
+                    const misCreds = await BitChatAuth.obtenerMisCredenciales();
+                    if (misCreds) {
+                        const miCuarta = await generarCuartaCredencial(misCreds.idPublico, misCreds.idPrivado, useStore.getState().masterPassword);
+                        const allMsgs = await DB.getAllMessages();
+                        const lastTime = allMsgs.length > 0 ? Math.max(...allMsgs.map(m => m.time)) : 0;
+                        const repairIds = allMsgs.filter(m => m.msg === '[Mensaje Cifrado]' && m.ciphertext && m.iv).map(m => m.msgId);
+                        
+                        console.log(`[DEBUG-SYNC] Lanzando AUTO-SYNC con ${remoteDeviceId}...`);
+                        conn.send({ 
+                            tipo: 'SYNC_REQUEST', 
+                            cuarta: miCuarta, 
+                            lastMessageTime: lastTime,
+                            repairMsgIds: repairIds
+                        });
+                    }
+
                     if (this.onRefresh) this.onRefresh();
                 }
             }
