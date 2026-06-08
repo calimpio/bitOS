@@ -1,58 +1,108 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../../store/useStore.ts';
-import { PeerService } from '../../sdk/index.ts';
+import { PeerService, DB } from '../../sdk/index.ts';
 import { Card } from '../ui/Card.tsx';
 import { Button } from '../ui/Button.tsx';
 import { Device } from '../../sdk/models/types.ts';
 
 export const DevicesView: React.FC = () => {
     const { me, devices, setDevices } = useStore();
+    const [isSearching, setIsSearching] = useState(false);
+    const [searchTimeLeft, setSearchTimeLeft] = useState(0);
+
+    const refreshDevices = async () => {
+        const storedDevices = await DB.getDevices();
+        const localDeviceId = localStorage.getItem('bit_device_id') || 'local';
+        
+        const currentDevices: Device[] = [
+            {
+                deviceId: localDeviceId,
+                idPublico: me?.idPublico || '...',
+                label: 'Este Dispositivo (Principal)',
+                isOnline: PeerService.peer?.open || false,
+                lastSeen: Date.now(),
+                publicKey: me?.publicKey
+            },
+            ...storedDevices.map((d: any) => ({
+                ...d,
+                isOnline: !!Object.values(PeerService.conexionesP2PDirectas).find(c => c.conn?.peer === d.peerId && c.conn?.open)
+            }))
+        ];
+
+        setDevices(currentDevices);
+    };
 
     useEffect(() => {
-        // Poll for online status of peer connections
-        const updateOnlineStatus = () => {
-            if (!me) return;
-            
-            // In BitChat, "devices" are essentially other nodes with the same public ID
-            // or nodes that we consider part of our personal "mesh".
-            // For now, let's treat the current node and known connections as potential devices.
-            
-            const currentDevices: Device[] = [
-                {
-                    idPublico: me.idPublico,
-                    label: 'Este Dispositivo',
-                    isOnline: PeerService.peer?.open || false,
-                    lastSeen: Date.now(),
-                    publicKey: me.publicKey
-                }
-            ];
-
-            // If we have active connections that match our own public ID (multi-device sync)
-            // they would appear here.
-            
-            setDevices(currentDevices);
+        refreshDevices();
+        const interval = setInterval(refreshDevices, 10000);
+        PeerService.onRefresh = refreshDevices;
+        return () => {
+            clearInterval(interval);
+            PeerService.onRefresh = null;
         };
-
-        const interval = setInterval(updateOnlineStatus, 5000);
-        updateOnlineStatus();
-
-        return () => clearInterval(interval);
     }, [me, setDevices]);
+
+    useEffect(() => {
+        let timer: number;
+        let searchInterval: number;
+
+        if (isSearching && searchTimeLeft > 0) {
+            timer = setInterval(() => {
+                setSearchTimeLeft(prev => prev - 1);
+            }, 1000) as unknown as number;
+
+            // Trigger active search every 10 seconds during the minute
+            searchInterval = setInterval(() => {
+                PeerService.buscarDispositivos();
+            }, 10000) as unknown as number;
+        } else if (searchTimeLeft === 0) {
+            setIsSearching(false);
+        }
+
+        return () => {
+            clearInterval(timer);
+            clearInterval(searchInterval);
+        };
+    }, [isSearching, searchTimeLeft]);
+
+    const handleSearch = () => {
+        setIsSearching(true);
+        setSearchTimeLeft(60);
+        PeerService.buscarDispositivos();
+    };
+
+    const handleDeleteDevice = async (deviceId: string) => {
+        if (confirm(`¿Desvincular dispositivo ${deviceId}? Dejará de recibir sincronizaciones.`)) {
+            await DB.deleteDevice(deviceId);
+            refreshDevices();
+        }
+    };
 
     return (
         <div className="devices-view-container" style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '600px', margin: '0 auto', width: '100%' }}>
-            <h2 style={{ color: 'var(--primary)', textAlign: 'center', marginBottom: '10px' }}>bitDevices</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <h2 style={{ color: 'var(--primary)', margin: 0 }}>bitDevices</h2>
+                <Button 
+                    variant={isSearching ? 'ghost' : 'success'} 
+                    disabled={isSearching} 
+                    onClick={handleSearch}
+                    style={{ minWidth: '160px' }}
+                >
+                    {isSearching ? `Buscando... (${searchTimeLeft}s)` : '🔍 Buscar Dispositivos'}
+                </Button>
+            </div>
+            
             <p style={{ color: 'var(--text-dim)', fontSize: '14px', textAlign: 'center' }}>
                 Gestiona tus terminales vinculadas y su estado en la red.
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginTop: '10px' }}>
                 {devices.map((device) => (
-                    <Card key={device.idPublico} style={{ padding: '20px' }}>
+                    <Card key={device.deviceId} style={{ padding: '20px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div>
                                 <h4 style={{ color: 'var(--accent-blue)', marginBottom: '5px' }}>{device.label}</h4>
-                                <p style={{ fontSize: '12px', color: 'var(--text-dim)' }}>ID: {device.idPublico}</p>
+                                <p style={{ fontSize: '12px', color: 'var(--text-dim)' }}>ID Dispositivo: {device.deviceId}</p>
                                 <p style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '4px' }}>
                                     Visto por última vez: {new Date(device.lastSeen).toLocaleString()}
                                 </p>
@@ -72,8 +122,8 @@ export const DevicesView: React.FC = () => {
                                         {device.isOnline ? 'ACTIVO' : 'DESCONECTADO'}
                                     </span>
                                 </div>
-                                {device.label !== 'Este Dispositivo' && (
-                                    <Button variant="ghost" className="btn-sm" style={{ color: 'var(--primary)' }}>Desvincular</Button>
+                                {device.label !== 'Este Dispositivo (Principal)' && (
+                                    <Button variant="ghost" className="btn-sm" style={{ color: 'var(--primary)' }} onClick={() => handleDeleteDevice(device.deviceId)}>Desvincular</Button>
                                 )}
                             </div>
                         </div>

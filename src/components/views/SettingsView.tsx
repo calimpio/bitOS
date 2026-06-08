@@ -69,19 +69,6 @@ export const SettingsView: React.FC = () => {
                 </div>
             </Card>
             <Card style={{ padding: '20px', flexShrink: '0' }}>
-                <h4 style={{ marginBottom: '10px', color: 'var(--secondary)' }}>Sincronización</h4>
-                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '10px' }}>Vincular con otro de mis dispositivos</p>
-                <Input 
-                    type="password" 
-                    placeholder="Contraseña Maestra" 
-                    value={syncPass} 
-                    onChange={(e) => setSyncPass(e.target.value)} 
-                />
-                <div style={{ marginTop: '10px' }}>
-                    <Button variant="ghost" onClick={handleSync}>Iniciar Sync</Button>
-                </div>
-            </Card>
-            <Card style={{ padding: '20px', flexShrink: '0' }}>
                 <h4 style={{ marginBottom: '10px', color: 'var(--primary)' }}>Seguridad</h4>
                 <Button variant="primary" onClick={handleClearData}>Borrar Datos Locales</Button>
             </Card>

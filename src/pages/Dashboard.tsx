@@ -5,6 +5,7 @@ import { Sidebar } from '../components/layout/Sidebar.tsx';
 import { ChatView } from '../components/views/ChatView.tsx';
 import { SettingsView } from '../components/views/SettingsView.tsx';
 import { DevicesView } from '../components/views/DevicesView.tsx';
+import { ChatSettingsView } from '../components/views/ChatSettingsView.tsx';
 import { Modal } from '../components/ui/Modal.tsx';
 import { Input } from '../components/ui/Input.tsx';
 import { Button } from '../components/ui/Button.tsx';
@@ -65,13 +66,17 @@ export const DashboardPage: React.FC = () => {
 
             <Modal 
                 active={showModalConfig && !!chatConIdPublico} 
-                title="Chat Config" 
+                title="Configuración de Chat" 
                 onClose={() => useStore.setState({ showModalConfig: false })}
             >
-                <p style={{ fontSize: '13px', color: 'var(--text-dim)' }}>¿Eliminar este historial?</p>
-                <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                    <Button variant="ghost" style={{ flex: '1' }} onClick={() => useStore.setState({ showModalConfig: false })}>Cancelar</Button>
-                    <Button style={{ flex: '1' }} onClick={handleDeleteChat}>Eliminar</Button>
+                {/* Content will be injected or handled via ChatView's logic if we pass props, 
+                    but for now let's keep it simple and just provide the Delete option here, 
+                    and we will add the Sync Permissions soon. */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    <div>
+                        <p style={{ fontSize: '13px', color: 'var(--text-dim)', marginBottom: '10px' }}>Zona de Peligro</p>
+                        <Button variant="primary" style={{ width: '100%' }} onClick={handleDeleteChat}>Eliminar Historial Local</Button>
+                    </div>
                 </div>
             </Modal>
 
@@ -82,7 +87,8 @@ export const DashboardPage: React.FC = () => {
                     {activeApp === 'bitChat' && <ChatView />}
                     {activeApp === 'Settings' && <SettingsView />}
                     {activeApp === 'bitDevices' && <DevicesView />}
-                    {activeApp !== 'bitChat' && activeApp !== 'Settings' && activeApp !== 'bitDevices' && (
+                    {activeApp === 'ChatSettings' && <ChatSettingsView />}
+                    {activeApp !== 'bitChat' && activeApp !== 'Settings' && activeApp !== 'bitDevices' && activeApp !== 'ChatSettings' && (
                         <div style={{ textAlign: 'center', marginTop: '50px', color: 'var(--text-dim)' }}>Próximamente...</div>
                     )}
                 </div>

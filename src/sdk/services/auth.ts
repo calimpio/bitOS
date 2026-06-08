@@ -115,8 +115,8 @@ export const BitChatAuth: IBitChatAuth = {
         return map;
     },
 
-    async guardarContacto(idPublico: string, tokenCuartaCredencial: string, insecure: boolean = false, publicKey?: JsonWebKey): Promise<void> {
-        const contactData: Contact = { tokenCuartaCredencial, insecure, publicKey };
+    async guardarContacto(idPublico: string, tokenCuartaCredencial: string, insecure: boolean = false, publicKey?: JsonWebKey, syncAllowedDevices?: string[]): Promise<void> {
+        const contactData: Contact = { tokenCuartaCredencial, insecure, publicKey, syncAllowedDevices };
         const encrypted = await VaultService.encryptForMe(idPublico, contactData);
         await DB.saveContact(idPublico, encrypted);
     },

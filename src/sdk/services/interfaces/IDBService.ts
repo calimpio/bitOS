@@ -86,4 +86,13 @@ export interface IDBService {
      * from legacy versions using the Master Password.
      */
     migratePlainMessages(): Promise<void>;
+
+    /** Adds or updates a known personal device. */
+    addDevice(device: any): Promise<void>;
+
+    /** Retrieves all known personal devices. */
+    getDevices(): Promise<any[]>;
+
+    /** Deletes a device from the known devices list. */
+    deleteDevice(deviceId: string): Promise<void>;
 }

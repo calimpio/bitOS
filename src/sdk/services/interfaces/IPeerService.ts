@@ -9,7 +9,7 @@ export interface IPeerService {
     peer: Peer | null;
 
     /** Map of active secure P2P connections. */
-    conexionesP2PDirectas: Record<string, { channelId: string, status: string, conn?: DataConnection }>;
+    conexionesP2PDirectas: Record<string, { channelId?: string, status: string, conn?: DataConnection }>;
 
     /** Cache of derived ECDH shared secrets for active sessions. */
     sharedKeys: Record<string, CryptoKey>;
@@ -24,7 +24,7 @@ export interface IPeerService {
     onMessage: ((chatId: string) => void) | null;
 
     /** Initializes the P2P node with the given Public ID. */
-    inicializarNodo(idPublico: string): Promise<void>;
+    inicializarNodo(idPublico: string, useSuffix?: boolean): Promise<void>;
 
     /** Starts the background synchronization interval. */
     startBackgroundSync(): void;
@@ -58,6 +58,12 @@ export interface IPeerService {
 
     /** Encrypts (E2EE) and sends a text message to a contact. */
     enviarMensaje(idPublicoAmigo: string, texto: string): Promise<void>;
+
+    /** Discovery: Connects to another personal terminal using the base identity. */
+    conectarADispositivoPersonal(targetId: string): Promise<void>;
+
+    /** Actively searches for other personal devices for a period of time. */
+    buscarDispositivos(): Promise<void>;
 
     /** 
      * Initiates a P2P synchronization probe between devices owned by the same user 

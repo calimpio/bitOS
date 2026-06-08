@@ -23,8 +23,8 @@ export interface IBitChatAuth {
     /** Retrieves the contact list from secure storage. */
     obtenerContactos(): Promise<ContactMap>;
 
-    /** Saves or updates a contact including their E2EE Public Key. */
-    guardarContacto(idPublico: string, tokenCuartaCredencial: string, insecure?: boolean, publicKey?: JsonWebKey): Promise<void>;
+    /** Saves or updates a contact including their E2EE Public Key and sync permissions. */
+    guardarContacto(idPublico: string, tokenCuartaCredencial: string, insecure?: boolean, publicKey?: JsonWebKey, syncAllowedDevices?: string[]): Promise<void>;
 
     /** Flags a contact as insecure if an identity conflict is detected in the network. */
     marcarContactoInseguro(idPublico: string): Promise<void>;

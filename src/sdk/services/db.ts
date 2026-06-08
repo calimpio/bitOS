@@ -9,7 +9,7 @@ export const DB: IDBService = {
 
     init(): Promise<void> {
         return new Promise((resolve, reject) => {
-            const req = indexedDB.open('bitchat_db', 7);
+            const req = indexedDB.open('bitchat_db', 9);
             req.onupgradeneeded = (e) => {
                 const db = (e.target as IDBOpenDBRequest).result;
                 if (!db.objectStoreNames.contains('messages')) {
@@ -36,12 +36,44 @@ export const DB: IDBService = {
                 if (!db.objectStoreNames.contains('blacklist')) {
                     db.createObjectStore('blacklist', { keyPath: 'idPublico' });
                 }
+                if (db.objectStoreNames.contains('devices')) {
+                    db.deleteObjectStore('devices');
+                }
+                db.createObjectStore('devices', { keyPath: 'deviceId' });
             };
             req.onsuccess = (e) => {
                 this.db = (e.target as IDBOpenDBRequest).result;
                 resolve();
             };
             req.onerror = () => reject(req.error);
+        });
+    },
+
+    async addDevice(device: any): Promise<void> {
+        return new Promise((resolve) => {
+            if (!this.db) return resolve();
+            const tx = this.db.transaction('devices', 'readwrite');
+            const store = tx.objectStore('devices');
+            store.put(device).onsuccess = () => resolve();
+        });
+    },
+
+    async getDevices(): Promise<any[]> {
+        return new Promise((resolve) => {
+            if (!this.db) return resolve([]);
+            const tx = this.db.transaction('devices', 'readonly');
+            const store = tx.objectStore('devices');
+            const req = store.getAll();
+            req.onsuccess = () => resolve(req.result);
+        });
+    },
+
+    async deleteDevice(deviceId: string): Promise<void> {
+        return new Promise((resolve) => {
+            if (!this.db) return resolve();
+            const tx = this.db.transaction('devices', 'readwrite');
+            const store = tx.objectStore('devices');
+            store.delete(deviceId).onsuccess = () => resolve();
         });
     },
 

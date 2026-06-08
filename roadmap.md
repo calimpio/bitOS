@@ -10,6 +10,7 @@ Este documento detalla el progreso del desarrollo de BitChat y las metas futuras
     - `DB`: Gestión de base de datos relacional local con IndexedDB.
     - `Auth`: Lógica criptográfica SHA-256 para identidades autónomas.
     - `Peer`: Networking P2P robusto utilizando PeerJS y WebRTC.
+- [x] **Soporte Multi-Terminal**: Implementación de `deviceId` persistente y sufijos de Peer dinámicos para permitir múltiples sesiones simultáneas con la misma identidad.
 - [x] **Sistema de Tipado Fuerte**: Implementación de uniones discriminadas para paquetes de datos de red (`IPaqueteData`).
 - [x] **Gestión de Estado Reactiva**: Estado global centralizado y tipado para una UI predecible.
 - [x] **Seguridad Avanzada**:

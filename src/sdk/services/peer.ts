@@ -1,7 +1,7 @@
 import { Peer, DataConnection } from 'peerjs';
 import { DB } from './db.ts';
 import { BitChatAuth, generarCuartaCredencial, generarQuintaId, hashString } from './auth.ts';
-import { AppState, IPaqueteData } from '../models/types.ts';
+import { AppState, IPaqueteData, ContactMap } from '../models/types.ts';
 import { CryptoService } from './crypto.ts';
 import { IPeerService } from './interfaces/IPeerService.ts';
 import { useStore } from '../../store/useStore.ts';
@@ -13,16 +13,42 @@ export const PeerService: IPeerService = {
     onRefresh: null,
     onMessage: null,
 
-    async inicializarNodo(idPublico: string): Promise<void> {
+    async inicializarNodo(idPublico: string, useSuffix: boolean = false): Promise<void> {
         const hashedId = await hashString(idPublico);
         const myAuthId = `bc-v2-${hashedId.substring(0, 24)}`;
+        
+        // Detect Environment
+        const isWindows = !!(window as any).chrome?.webview;
+        const userAgent = navigator.userAgent;
+        let envLabel = 'Browser';
+        if (isWindows) envLabel = 'Windows App';
+        else if (userAgent.includes('Firefox')) envLabel = 'Firefox';
+        else if (userAgent.includes('Chrome')) envLabel = 'Chrome';
+        else if (userAgent.includes('Safari')) envLabel = 'Safari';
+        
+        (this as any)._localEnvLabel = envLabel;
+
+        // Persistent Device ID
+        let deviceId = localStorage.getItem('bit_device_id');
+        if (!deviceId) {
+            deviceId = crypto.randomUUID().substring(0, 8);
+            localStorage.setItem('bit_device_id', deviceId);
+        }
+        (this as any)._localDeviceId = deviceId;
+
+        // Dynamic ID logic: Try to be primary, else use suffix
+        let fullId = myAuthId;
+        if (useSuffix) {
+            const sessionSuffix = crypto.randomUUID().substring(0, 4);
+            fullId = `${myAuthId}-${sessionSuffix}`;
+        }
 
         if (this.peer) {
             this.peer.destroy();
             this.peer = null;
         }
         
-        this.peer = new Peer(myAuthId, {
+        this.peer = new Peer(fullId, {
             debug: 1 // Only errors
         });
 
@@ -38,12 +64,20 @@ export const PeerService: IPeerService = {
         });
 
         this.peer.on('error', (err: any) => {
+            if (err.type === 'unavailable-id' && !useSuffix) {
+                console.log('ID base ocupado, iniciando como terminal secundaria...');
+                this.inicializarNodo(idPublico, true);
+                return;
+            }
+            
+            // Silence "peer-unavailable" errors for background discovery
+            if (err.type === 'peer-unavailable') {
+                return; 
+            }
+
             console.error('Error en PeerJS:', err);
             if (err.type === 'unavailable-id') {
-                const suffix = Math.random().toString(36).substring(7);
-                this.inicializarNodo(`${idPublico}-${suffix}`);
-            } else if (err.type === 'server-error' || err.type === 'network') {
-                // Potential network drop, handled by 'disconnected' or manual retry if needed
+                this.inicializarNodo(idPublico, true); // Retry with new random suffix
             }
         });
 
@@ -74,7 +108,7 @@ export const PeerService: IPeerService = {
 
                 conn.on('open', () => {
                     foundExisting = true; clearTimeout(timeout);
-                    conn.send({ tipo: 'IDENTITY_PROBE', deIdPublico: idPublico, cuarta: miCuarta });
+                    conn.send({ tipo: 'IDENTITY_PROBE', deIdPublico: idPublico, cuarta: miCuarta, nonce: crypto.randomUUID() });
                 });
                 conn.on('data', (data: unknown) => {
                     const paquete = data as IPaqueteData;
@@ -91,11 +125,62 @@ export const PeerService: IPeerService = {
     startBackgroundSync(): void {
         if (this.syncInterval) clearInterval(this.syncInterval);
         this.syncInterval = setInterval(async () => {
+            const misCreds = await BitChatAuth.obtenerMisCredenciales();
+            if (!misCreds) return;
+
+            // 1. Sync messages with pending contacts
             const pending = await DB.getPendingMessages();
             const uniqueTargets = [...new Set(pending.map(m => m.chatId))];
             for (const target of uniqueTargets) { this.conectarAContacto(target); }
+            
+            // 2. Retry pending contact requests
             for (const target of Array.from(useStore.getState().solicitudesEnviadasPendientes)) { this.conectarAContacto(target); }
-        }, 15000) as unknown as number;
+
+            // 3. Discovery: Look for other personal terminals (Identity Mesh)
+            const hashedId = await hashString(misCreds.idPublico);
+            const baseId = `bc-v2-${hashedId.substring(0, 24)}`;
+            
+            // In a real sovereign mesh, we'd use a DHT or local discovery, 
+            // but for PeerJS we probe known patterns or rely on the server signaling.
+            // For now, we try to connect to the "base" ID (the first terminal usually claims it)
+            this.conectarADispositivoPersonal(baseId);
+            
+        }, 30000) as unknown as number;
+    },
+
+    async conectarADispositivoPersonal(targetId: string): Promise<void> {
+        if (!this.peer || !this.peer.open || !targetId) return;
+        if (targetId === this.peer.id) return; 
+
+        const conn = this.peer.connect(targetId, { reliable: true });
+        conn.on('open', async () => {
+            const misCreds = await BitChatAuth.obtenerMisCredenciales();
+            if (!misCreds) return;
+            const miCuarta = await generarCuartaCredencial(misCreds.idPublico, misCreds.idPrivado, useStore.getState().masterPassword);
+            
+            conn.send({ 
+                tipo: 'IDENTITY_PROBE', 
+                deIdPublico: misCreds.idPublico, 
+                cuarta: miCuarta,
+                nonce: crypto.randomUUID(),
+                deviceId: (this as any)._localDeviceId,
+                deviceLabel: (this as any)._localEnvLabel
+            });
+        });
+        this._procesarEntrante(conn);
+    },
+
+    async buscarDispositivos(): Promise<void> {
+        const misCreds = await BitChatAuth.obtenerMisCredenciales();
+        if (!misCreds) return;
+        const hashedId = await hashString(misCreds.idPublico);
+        const baseId = `bc-v2-${hashedId.substring(0, 24)}`;
+        
+        console.log('Iniciando búsqueda activa de dispositivos...');
+        // In this architecture, we attempt to connect to the "base" ID.
+        // If there are multiple devices, they would ideally have a way to 
+        // announce themselves or we would scan common suffix patterns.
+        this.conectarADispositivoPersonal(baseId);
     },
 
     async conectarAContacto(idPublicoAmigo: string, huellaEsperada?: string): Promise<void> {
@@ -120,7 +205,11 @@ export const PeerService: IPeerService = {
         });
         
         const contactos = await BitChatAuth.obtenerContactos();
-        if (!contactos[idPublicoAmigo]) { useStore.getState().solicitudesEnviadasPendientes.add(idPublicoAmigo); }
+        if (!contactos[idPublicoAmigo]) { 
+            useStore.getState().solicitudesEnviadasPendientes.add(idPublicoAmigo); 
+            // Register as PENDING in our local map to track it
+            this.conexionesP2PDirectas[idPublicoAmigo] = { status: 'PENDING', conn };
+        }
 
         conn.on('open', async () => {
             console.log(`Conexión abierta con ${idPublicoAmigo}`);
@@ -211,10 +300,43 @@ export const PeerService: IPeerService = {
                 const misCreds = await BitChatAuth.obtenerMisCredenciales();
                 if (!misCreds) return;
                 const miCuarta = await generarCuartaCredencial(misCreds.idPublico, misCreds.idPrivado, useStore.getState().masterPassword);
-                if (paquete.cuarta === miCuarta) { conn.send({ tipo: 'IDENTITY_MATCH' }); }
+                
+                if (paquete.cuarta === miCuarta) { 
+                    const remoteDeviceId = paquete.deviceId || conn.peer!.replace('bc-v2-', '').split('-')[0];
+                    await DB.addDevice({
+                        deviceId: remoteDeviceId,
+                        idPublico: paquete.deIdPublico,
+                        label: paquete.deviceLabel || 'Otra Terminal',
+                        isOnline: true,
+                        lastSeen: Date.now(),
+                        peerId: conn.peer
+                    });
+                    conn.send({ 
+                        tipo: 'IDENTITY_MATCH', 
+                        deviceId: (this as any)._localDeviceId,
+                        deviceLabel: (this as any)._localEnvLabel 
+                    }); 
+                    if (this.onRefresh) this.onRefresh();
+                }
                 else {
                     conn.send({ tipo: 'IDENTITY_CONFLICT' });
                     this._alertarContactosDeIntentoDeSecuestro(misCreds.idPublico);
+                }
+            }
+            if (paquete.tipo === 'IDENTITY_MATCH') {
+                console.log('Sincronización de Identidad Exitosa con dispositivo remoto.');
+                const remoteDeviceId = paquete.deviceId || conn.peer?.replace('bc-v2-', '').split('-')[0];
+                const ownerIdPublico = conn.peer?.replace('bc-v2-', '').split('-')[0]; // Fallback to hash if no deviceId
+                if (remoteDeviceId) {
+                    await DB.addDevice({
+                        deviceId: remoteDeviceId,
+                        idPublico: ownerIdPublico || 'unknown',
+                        label: paquete.deviceLabel || 'Otra Terminal',
+                        isOnline: true,
+                        lastSeen: Date.now(),
+                        peerId: conn.peer
+                    });
+                    if (this.onRefresh) this.onRefresh();
                 }
             }
             if (paquete.tipo === 'SECURITY_ALERT') {
@@ -308,13 +430,38 @@ export const PeerService: IPeerService = {
                 const miCuarta = await generarCuartaCredencial(misCreds.idPublico, misCreds.idPrivado, useStore.getState().masterPassword);
                 
                 if (paquete.cuarta === miCuarta) {
-                    console.log('SYNC: Password (cuarta) coincide. Preparando datos...');
-                    const contactos = await BitChatAuth.obtenerContactos();
-                    const mensajes = await DB.getAllMessages();
-                    console.log(`SYNC: Enviando ${Object.keys(contactos).length} contactos y ${mensajes.length} mensajes.`);
-                    conn.send({ tipo: 'SYNC_DATA', contactos, mensajes });
+                    console.log('SYNC: Solicitud de sincronización de dispositivo personal.');
+                    
+                    // Identify which device is requesting sync
+                    const allDevices = await DB.getDevices();
+                    const requestingDevice = allDevices.find(d => d.peerId === conn.peer);
+                    
+                    if (!requestingDevice) {
+                        console.warn('SYNC: Dispositivo no registrado. Sincronización denegada.');
+                        conn.close();
+                        return;
+                    }
+
+                    const allContactos = await BitChatAuth.obtenerContactos();
+                    const filteredContactos: ContactMap = {};
+                    const allowedChatIds: string[] = [];
+
+                    // Filter contacts based on permissions (using deviceId)
+                    for (const id in allContactos) {
+                        const c = allContactos[id];
+                        if (c.syncAllowedDevices?.includes(requestingDevice.deviceId)) {
+                            filteredContactos[id] = c;
+                            allowedChatIds.push(id);
+                        }
+                    }
+
+                    const allMensajes = await DB.getAllMessages();
+                    const filteredMensajes = allMensajes.filter(m => allowedChatIds.includes(m.chatId));
+
+                    console.log(`SYNC: Enviando ${Object.keys(filteredContactos).length} contactos y ${filteredMensajes.length} mensajes autorizados.`);
+                    conn.send({ tipo: 'SYNC_DATA', contactos: filteredContactos, mensajes: filteredMensajes });
                 } else {
-                    console.warn('SYNC: Intento de sincronización con password (cuarta) incorrecto.');
+                    console.warn('SYNC: Intento de sincronización con password incorrecto.');
                     conn.close();
                 }
             }

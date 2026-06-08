@@ -14,6 +14,7 @@ export interface Contact {
     tokenCuartaCredencial: string;
     insecure: boolean;
     publicKey?: JsonWebKey;
+    syncAllowedDevices?: string[]; // List of device Public IDs allowed to sync this chat
 }
 
 export interface ContactMap {
@@ -58,11 +59,19 @@ export interface IPaqueteBase {
     miIdPublico?: string;
     deIdPublico?: string;
 }
-
 export interface IPaqueteIdentityProbe extends IPaqueteBase {
     tipo: 'IDENTITY_PROBE';
     deIdPublico: string;
     cuarta: string;
+    nonce?: string; // Challenge for Identity Probe V2
+    deviceId?: string; // Persistent unique ID for the terminal
+    deviceLabel?: string; // Environment info (e.g., "Windows App", "Chrome")
+}
+
+export interface IPaqueteIdentityMatch extends IPaqueteBase {
+    tipo: 'IDENTITY_MATCH';
+    deviceId?: string;
+    deviceLabel?: string;
 }
 
 export interface IPaqueteSecurityAlert extends IPaqueteBase {
@@ -118,10 +127,6 @@ export interface IPaqueteSyncData extends IPaqueteBase {
     mensajes: Message[];
 }
 
-export interface IPaqueteIdentityMatch extends IPaqueteBase {
-    tipo: 'IDENTITY_MATCH';
-}
-
 export interface IPaqueteIdentityConflict extends IPaqueteBase {
     tipo: 'IDENTITY_CONFLICT';
 }
@@ -151,16 +156,18 @@ export type IPaqueteData =
     | IPaqueteSyncData;
 
     export interface Device {
-        idPublico: string;
+        deviceId: string; // Key in database
+        idPublico: string; // Owner's ID
         label: string;
         isOnline: boolean;
         lastSeen: number;
         publicKey?: JsonWebKey;
+        peerId?: string; // Current session signaling ID
     }
 
     export interface AppState {
         pantalla: 'AUTH' | 'AUTH_LOGIN' | 'DASHBOARD' | 'TERMS';
-        activeApp: 'bitChat' | 'bitDrive' | 'bitDevices' | 'Settings';
+        activeApp: 'bitChat' | 'bitDrive' | 'bitDevices' | 'Settings' | 'ChatSettings';
         error: string;
         chatConIdPublico: string | null;
         historiales: Record<string, Message[]>;

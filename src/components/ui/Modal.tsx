@@ -9,10 +9,8 @@ interface ModalProps {
 }
 
 export const Modal: React.FC<ModalProps> = ({ active, title, children, onClose }) => {
-    if (!active) return null;
-
     return (
-        <div className="modal-overlay" onClick={onClose}>
+        <div className={`modal-overlay ${active ? 'active' : ''}`} onClick={onClose}>
             <div className="modal-content" onClick={(e) => e.stopPropagation()}>
                 <Card style={{ padding: '24px', width: '90%', maxWidth: '400px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
