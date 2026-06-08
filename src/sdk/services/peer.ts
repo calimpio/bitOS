@@ -312,37 +312,63 @@ export const PeerService: IPeerService = {
             if (paquete.tipo === 'MSG_ACK') 
                 { await DB.updateMessageByMsgId(paquete.msgId, { status: paquete.read ? 'read' : 'sent' }); if (this.onRefresh) this.onRefresh(); }
             if (paquete.tipo === 'SYNC_REQUEST') {
+                console.log(`[SYNC-DEBUG] Recibido SYNC_REQUEST de dispositivo ${conn.peer}. lastMessageTime: ${paquete.lastMessageTime}, repairIds: ${paquete.repairMsgIds?.length || 0}`);
                 const misCreds = await BitChatAuth.obtenerMisCredenciales();
-                if (!misCreds) return;
+                if (!misCreds) { console.error('[SYNC-DEBUG] No se encontraron credenciales locales.'); return; }
                 const miCuarta = await generarCuartaCredencial(misCreds.idPublico, misCreds.idPrivado, useStore.getState().masterPassword);
                 if (paquete.cuarta === miCuarta) {
                     const allDevices = await DB.getDevices(), requestingDevice = allDevices.find(d => d.peerId === conn.peer);
-                    if (!requestingDevice) { conn.close(); return; }
+                    if (!requestingDevice) { console.warn(`[SYNC-DEBUG] Dispositivo solicitante ${conn.peer} no encontrado en DB.`); conn.close(); return; }
+                    
                     const allContactos = await BitChatAuth.obtenerContactos(), filteredContactos: ContactMap = {}, allowedChatIds: string[] = [];
-                    for (const id in allContactos) { if (allContactos[id].syncAllowedDevices?.includes(requestingDevice.deviceId)) { filteredContactos[id] = allContactos[id]; allowedChatIds.push(id); } }
+                    for (const id in allContactos) { 
+                        if (allContactos[id].syncAllowedDevices?.includes(requestingDevice.deviceId)) { 
+                            filteredContactos[id] = allContactos[id]; 
+                            allowedChatIds.push(id); 
+                        } 
+                    }
+                    console.log(`[SYNC-DEBUG] ${allowedChatIds.length} chats permitidos para dispositivo ${requestingDevice.deviceId}`);
+
                     const allMensajes = await DB.getAllMessages();
                     const isRepair = (paquete.repairMsgIds && paquete.repairMsgIds.length > 0);
                     const deltaMensajes = allMensajes.filter(m => {
                         if (!m.msgId) return false;
                         const isAllowed = allowedChatIds.includes(m.chatId);
                         if (!isAllowed) return false;
-                        if (isRepair) return true; // Si es reparación, mandamos todo lo que tenemos de este chat
+                        if (isRepair) return true;
                         return m.time > (paquete.lastMessageTime || 0);
                     });
+                    
+                    console.log(`[SYNC-DEBUG] Filtrados ${deltaMensajes.length} mensajes para enviar.`);
+
                     for (const m of deltaMensajes) {
                         if (m.msg === '[Mensaje Cifrado]' && m.ciphertext && m.iv) {
                             const sharedKey = await this._getSharedKey(m.chatId);
-                            if (sharedKey) { try { m.msg = await CryptoService.decrypt(sharedKey, m.ciphertext, m.iv); m.ciphertext = undefined; m.iv = undefined; } catch (e) { } }
+                            if (sharedKey) { 
+                                try { 
+                                    m.msg = await CryptoService.decrypt(sharedKey, m.ciphertext, m.iv); 
+                                    m.ciphertext = undefined; m.iv = undefined; 
+                                } catch (e) {
+                                    console.warn(`[SYNC-DEBUG] Fallo al descifrar mensaje ${m.msgId} del chat ${m.chatId} antes de enviar.`);
+                                } 
+                            } else {
+                                console.warn(`[SYNC-DEBUG] Sin llave compartida para descifrar mensaje ${m.msgId} del chat ${m.chatId}`);
+                            }
                         }
                     }
 
                     // E2EE para dispositivos: Cifrar payload con la llave pública del dispositivo que solicita
                     const payload = { contactos: filteredContactos, mensajes: deltaMensajes };
+                    console.log(`[SYNC-DEBUG] Cifrando payload de sincronización para dispositivo ${requestingDevice.deviceId}...`);
                     const vault = await VaultService.encryptForE2EE('SYNC_PAYLOAD', payload, requestingDevice.publicKey || misCreds.publicKey!);
                     conn.send({ tipo: 'SYNC_DATA', vault });
-                } else { conn.close(); }
+                } else { 
+                    console.warn('[SYNC-DEBUG] Conflicto de cuarta credencial en SYNC_REQUEST.');
+                    conn.close(); 
+                }
             }
             if (paquete.tipo === 'SYNC_DATA') {
+                console.log(`[SYNC-DEBUG] Recibido SYNC_DATA de ${conn.peer}`);
                 let contactos: ContactMap = paquete.contactos || {};
                 let mensajes: Message[] = paquete.mensajes || [];
 
@@ -351,26 +377,35 @@ export const PeerService: IPeerService = {
                         const decrypted = await VaultService.decryptFromE2EE<{ contactos: ContactMap, mensajes: Message[] }>(paquete.vault);
                         contactos = decrypted.contactos;
                         mensajes = decrypted.mensajes;
-                        console.log(`[DEBUG-SYNC] Payload E2EE descifrado con éxito.`);
+                        console.log(`[SYNC-DEBUG] Bóveda E2EE descifrada con éxito: ${Object.keys(contactos).length} contactos, ${mensajes.length} mensajes.`);
                     } catch (e) {
-                        console.error('[DEBUG-SYNC] Error al descifrar payload E2EE:', e);
+                        console.error('[SYNC-DEBUG] ERROR FATAL: No se pudo descifrar la bóveda E2EE de sincronización:', e);
                         return;
                     }
                 }
 
-                console.log(`[DEBUG-SYNC] Recibido paquete SYNC_DATA con ${Object.keys(contactos).length} contactos y ${mensajes.length} mensajes.`);
-                for (const id in contactos) { await BitChatAuth.guardarContacto(id, contactos[id].tokenCuartaCredencial, contactos[id].insecure, contactos[id].publicKey, contactos[id].syncAllowedDevices); delete this.sharedKeys[id]; }
+                for (const id in contactos) { 
+                    console.log(`[SYNC-DEBUG] Importando/Actualizando contacto: ${id}`);
+                    await BitChatAuth.guardarContacto(id, contactos[id].tokenCuartaCredencial, contactos[id].insecure, contactos[id].publicKey, contactos[id].syncAllowedDevices); 
+                    delete this.sharedKeys[id]; 
+                }
 
-                // Validar mensajes antes de importar
-                const validados = mensajes.filter(m => {
-                    if (!m.msgId) return !!m.time; // Si no tiene ID, debe tener al menos fecha para ser considerado
-                    return true;
-                });
+                const validados = mensajes.filter(m => m.msgId || m.time);
+                console.log(`[SYNC-DEBUG] Procesando ${validados.length} mensajes recibidos...`);
 
                 for (const m of validados) {
                     if (m.msg === '[Mensaje Cifrado]' && m.ciphertext && m.iv) {
                         const sharedKey = await this._getSharedKey(m.chatId);
-                        if (sharedKey) { try { m.msg = await CryptoService.decrypt(sharedKey, m.ciphertext, m.iv); m.ciphertext = undefined; m.iv = undefined; } catch (e) { } }
+                        if (sharedKey) { 
+                            try { 
+                                m.msg = await CryptoService.decrypt(sharedKey, m.ciphertext, m.iv); 
+                                m.ciphertext = undefined; m.iv = undefined; 
+                            } catch (e) {
+                                console.warn(`[SYNC-DEBUG] No se pudo descifrar el mensaje ${m.msgId} tras importación (llave incompatible).`);
+                            } 
+                        } else {
+                            console.log(`[SYNC-DEBUG] Mensaje ${m.msgId} importado permanece cifrado (esperando llave de chat ${m.chatId}).`);
+                        }
                     }
                 }
                 await DB.importMessages(validados);
