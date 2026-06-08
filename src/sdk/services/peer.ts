@@ -58,7 +58,6 @@ export const PeerService: IPeerService = {
 
             // Re-trigger discovery and sync immediately upon opening
             DB.cleanInvalidMessages();
-            this.buscarDispositivos();
             this.startBackgroundSync();
         });
 
@@ -128,9 +127,6 @@ export const PeerService: IPeerService = {
 
             // 2. Retry pending contact requests
             for (const target of Array.from(useStore.getState().solicitudesEnviadasPendientes)) { this.conectarAContacto(target); }
-
-            // 3. Discovery: Look for other personal terminals
-            this.buscarDispositivos();
         }, 60000) as unknown as number;
     },
 
