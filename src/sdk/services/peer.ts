@@ -149,7 +149,8 @@ export const PeerService: IPeerService = {
                 cuarta: miCuarta,
                 nonce: crypto.randomUUID(),
                 deviceId: this.localDeviceId,
-                deviceLabel: this.localEnvLabel
+                deviceLabel: this.localEnvLabel,
+                publicKey: misCreds.publicKey
             });
         });
         this._procesarEntrante(conn);
