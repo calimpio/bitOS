@@ -201,6 +201,12 @@ export const DB: IDBService = {
 
     async addMessage(msg: Message): Promise<number | undefined> {
         const { aesKey } = useStore.getState();
+
+        // VALIDACIÓN: El mensaje debe tener al menos ID o Fecha
+        if (!msg.msgId && !msg.time) {
+            console.warn('[DB] Rechazando mensaje sin ID y sin Fecha');
+            return undefined;
+        }
         
         // Si el mensaje está legible y tenemos la llave de la bóveda, 
         // lo ciframos para persistencia local bajo el Master Password.
@@ -243,6 +249,20 @@ export const DB: IDBService = {
                 addReq.onsuccess = (e) => resolve((e.target as IDBRequest).result);
             }
         });
+    },
+
+    async cleanInvalidMessages(): Promise<void> {
+        if (!this.db) return;
+        const messages = await this.getAllMessages();
+        const toDelete = messages.filter(m => !m.msgId && !m.time);
+        if (toDelete.length > 0) {
+            console.log(`[DB] Limpiando ${toDelete.length} mensajes inválidos...`);
+            const tx = this.db.transaction('messages', 'readwrite');
+            const store = tx.objectStore('messages');
+            for (const m of toDelete) {
+                if (m.id) store.delete(m.id);
+            }
+        }
     },
 
     async getAllMessages(): Promise<Message[]> {

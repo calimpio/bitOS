@@ -95,4 +95,7 @@ export interface IDBService {
 
     /** Deletes a device from the known devices list. */
     deleteDevice(deviceId: string): Promise<void>;
+
+    /** Removes messages that lack both msgId and timestamp. */
+    cleanInvalidMessages(): Promise<void>;
 }

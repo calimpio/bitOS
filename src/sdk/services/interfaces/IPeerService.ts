@@ -11,6 +11,9 @@ export interface IPeerService {
     /** Map of active secure P2P connections. */
     conexionesP2PDirectas: Record<string, { channelId?: string, status: string, conn?: DataConnection }>;
 
+    /** Track sync sessions per deviceId to prevent loops. */
+    syncSessions: Record<string, boolean>;
+
     /** Cache of derived ECDH shared secrets for active sessions. */
     sharedKeys: Record<string, CryptoKey>;
 

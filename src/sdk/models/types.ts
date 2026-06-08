@@ -124,10 +124,21 @@ export interface IPaqueteSyncRequest extends IPaqueteBase {
     repairMsgIds?: string[]; // IDs of messages that are locally encrypted and need decryption from a peer
 }
 
+export interface EncryptedVaultObject {
+    label: string; // Plaintext or searchable hash
+    content: string; // Base64 ciphertext
+    iv: string; // Base64 IV
+    method: 'master' | 'e2ee';
+    publicKey?: JsonWebKey; // If E2EE was used
+    createdAt: number;
+    updatedAt: number;
+}
+
 export interface IPaqueteSyncData extends IPaqueteBase {
     tipo: 'SYNC_DATA';
-    contactos: ContactMap;
-    mensajes: Message[];
+    contactos?: ContactMap;
+    mensajes?: Message[];
+    vault?: EncryptedVaultObject;
 }
 
 export interface IPaqueteIdentityConflict extends IPaqueteBase {
