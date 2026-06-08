@@ -124,8 +124,20 @@ export const BitChatAuth: IBitChatAuth = {
         return map;
     },
 
-    async guardarContacto(idPublico: string, tokenCuartaCredencial: string, insecure: boolean = false, publicKey?: JsonWebKey, syncAllowedDevices?: string[]): Promise<void> {
-        const contactData: Contact = { tokenCuartaCredencial, insecure, publicKey, syncAllowedDevices };
+    async guardarContacto(idPublico: string, tokenCuartaCredencial: string, insecure: boolean = false, publicKey?: JsonWebKey, syncAllowedDevices?: string[], sharedSecret?: string): Promise<void> {
+        const existing = await this.obtenerContactos();
+        const old = existing[idPublico];
+        const now = Date.now();
+
+        const contactData: Contact = { 
+            tokenCuartaCredencial, 
+            insecure, 
+            publicKey, 
+            syncAllowedDevices, 
+            sharedSecret,
+            createdAt: old?.createdAt || now,
+            updatedAt: now
+        };
         const encrypted = await VaultService.encryptForMe(idPublico, contactData);
         await DB.saveContact(idPublico, encrypted);
     },
@@ -134,7 +146,8 @@ export const BitChatAuth: IBitChatAuth = {
         const contactos = await this.obtenerContactos();
         if (contactos[idPublico]) {
             contactos[idPublico].insecure = true;
-            await this.guardarContacto(idPublico, contactos[idPublico].tokenCuartaCredencial, true, contactos[idPublico].publicKey);
+            const c = contactos[idPublico];
+            await this.guardarContacto(idPublico, c.tokenCuartaCredencial, true, c.publicKey, c.syncAllowedDevices, c.sharedSecret);
         }
     },
 

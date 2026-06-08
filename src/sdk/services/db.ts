@@ -52,6 +52,11 @@ export const DB: IDBService = {
     },
 
     async addDevice(device: any): Promise<void> {
+        const now = Date.now();
+        if (!device.createdAt) device.createdAt = now;
+        device.updatedAt = now;
+        device.lastSeen = now;
+
         return new Promise((resolve) => {
             if (!this.db) return resolve();
             const tx = this.db.transaction('devices', 'readwrite');
@@ -137,6 +142,10 @@ export const DB: IDBService = {
     },
 
     async addRequest(req: RequestRecord): Promise<void> {
+        const now = Date.now();
+        if (!req.time) req.time = now;
+        req.updatedAt = now;
+
         return new Promise((resolve) => {
             if (!this.db) return resolve();
             const tx = this.db.transaction('requests', 'readwrite');
@@ -218,6 +227,8 @@ export const DB: IDBService = {
             msg.iv = encrypted.iv;
         }
 
+        msg.updatedAt = Date.now();
+
         return new Promise((resolve) => {
             if (!this.db) return resolve(undefined);
             const tx = this.db.transaction('messages', 'readwrite');
@@ -232,7 +243,7 @@ export const DB: IDBService = {
                         const newIsDecrypted = msg.msg !== '[Mensaje Cifrado]' && !msg.ciphertext;
 
                         if (existingIsEncrypted && newIsDecrypted) {
-                            const updated: Message = { ...existing, ...msg };
+                            const updated: Message = { ...existing, ...msg, updatedAt: Date.now() };
                             // Limpieza estricta de metadatos de transporte antiguo
                             if (!msg.ciphertext) updated.ciphertext = undefined;
                             store.put(updated).onsuccess = () => resolve(existing.msgId);

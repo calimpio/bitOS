@@ -117,5 +117,21 @@ export const CryptoService = {
             fingerprint += emojiList[index];
         }
         return fingerprint;
+    },
+
+    async exportAESKey(key: CryptoKey): Promise<string> {
+        const exported = await crypto.subtle.exportKey('raw', key);
+        return await arrayBufferToBase64(exported);
+    },
+
+    async importAESKey(base64: string): Promise<CryptoKey> {
+        const buffer = await base64ToArrayBuffer(base64);
+        return await crypto.subtle.importKey(
+            'raw',
+            buffer,
+            { name: 'AES-GCM', length: 256 },
+            true,
+            ['encrypt', 'decrypt']
+        );
     }
 };

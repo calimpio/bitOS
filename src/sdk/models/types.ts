@@ -9,6 +9,7 @@ export interface Credentials {
     encryptedPrivateKey?: string; // base64
     privateKeyIv?: string; // base64
     createdAt: number;
+    updatedAt?: number;
 }
 
 export interface Contact {
@@ -16,6 +17,9 @@ export interface Contact {
     insecure: boolean;
     publicKey?: JsonWebKey;
     syncAllowedDevices?: string[]; // List of device Public IDs allowed to sync this chat
+    sharedSecret?: string; // Base64 of the AES-GCM shared key
+    createdAt?: number;
+    updatedAt?: number;
 }
 
 export interface ContactMap {
@@ -28,6 +32,7 @@ export interface Message {
     de: string;
     msg: string;
     time: number;
+    updatedAt?: number;
     status: 'saved' | 'sent' | 'read';
     secure: boolean;
     iv?: string; // Initialization vector for AES-GCM
@@ -37,6 +42,7 @@ export interface Message {
 export interface RequestRecord {
     idPublico: string;
     time: number;
+    updatedAt?: number;
     publicKey?: JsonWebKey;
 }
 
@@ -174,31 +180,33 @@ export type IPaqueteData =
     | IPaqueteSyncRequest 
     | IPaqueteSyncData;
 
-    export interface Device {
-        deviceId: string; // Key in database
-        idPublico: string; // Owner's ID
-        label: string;
-        isOnline: boolean;
-        lastSeen: number;
-        publicKey?: JsonWebKey;
-        peerId?: string; // Current session signaling ID
-        accountCreatedAt?: number;
-    }
+export interface Device {
+    deviceId: string; // Key in database
+    idPublico: string; // Owner's ID
+    label: string;
+    isOnline: boolean;
+    lastSeen: number; // Acts as updatedAt
+    publicKey?: JsonWebKey;
+    peerId?: string; // Current session signaling ID
+    accountCreatedAt?: number; // Original creation time of the identity
+    createdAt?: number; // When this specific terminal was first seen
+    updatedAt?: number;
+}
 
-    export interface AppState {
-        pantalla: 'AUTH' | 'AUTH_LOGIN' | 'DASHBOARD' | 'TERMS';
-        activeApp: 'bitChat' | 'bitDrive' | 'bitDevices' | 'Settings' | 'ChatSettings';
-        error: string;
-        chatConIdPublico: string | null;
-        historiales: Record<string, Message[]>;
-        masterPassword: string;
-        showModalAdd: boolean;
-        showModalConfig: boolean;
-        lastPantalla: string | null;
-        me: Credentials | null;
-        solicitudesEnviadasPendientes: Set<string>;
-        mostrarChatMobile: boolean;
-        showSidebar: boolean;
-        aesKey?: CryptoKey | null; // Shared key for local DB encryption
-        devices: Device[];
-    }
+export interface AppState {
+    pantalla: 'AUTH' | 'AUTH_LOGIN' | 'DASHBOARD' | 'TERMS';
+    activeApp: 'bitChat' | 'bitDrive' | 'bitDevices' | 'Settings' | 'ChatSettings';
+    error: string;
+    chatConIdPublico: string | null;
+    historiales: Record<string, Message[]>;
+    masterPassword: string;
+    showModalAdd: boolean;
+    showModalConfig: boolean;
+    lastPantalla: string | null;
+    me: Credentials | null;
+    solicitudesEnviadasPendientes: Set<string>;
+    mostrarChatMobile: boolean;
+    showSidebar: boolean;
+    aesKey?: CryptoKey | null; // Shared key for local DB encryption
+    devices: Device[];
+}

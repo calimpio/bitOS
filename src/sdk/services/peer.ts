@@ -203,14 +203,36 @@ export const PeerService: IPeerService = {
 
     async _getSharedKey(idAmigo: string): Promise<CryptoKey | null> {
         if (this.sharedKeys[idAmigo]) return this.sharedKeys[idAmigo];
-        const misCreds = await BitChatAuth.obtenerMisCredenciales();
+        
         const contactos = await BitChatAuth.obtenerContactos();
-        if (!misCreds || !contactos[idAmigo]?.publicKey || !useStore.getState().aesKey) return null;
+        const contact = contactos[idAmigo];
+        if (!contact) return null;
+
+        // Intentar usar el secreto compartido sincronizado si existe
+        if (contact.sharedSecret) {
+            try {
+                const sharedKey = await CryptoService.importAESKey(contact.sharedSecret);
+                this.sharedKeys[idAmigo] = sharedKey;
+                return sharedKey;
+            } catch (e) {
+                console.error("[CRYPTO] Error importando secreto compartido:", e);
+            }
+        }
+
+        const misCreds = await BitChatAuth.obtenerMisCredenciales();
+        if (!misCreds || !contact.publicKey || !useStore.getState().aesKey) return null;
         try {
             const privKeyJWKJson = await CryptoService.decrypt(useStore.getState().aesKey!, misCreds.encryptedPrivateKey!, misCreds.privateKeyIv!);
             const myPrivKey = await crypto.subtle.importKey('jwk', JSON.parse(privKeyJWKJson), { name: 'ECDH', namedCurve: 'P-384' }, true, ['deriveKey']);
-            const sharedKey = await CryptoService.deriveSharedSecret(myPrivKey, await CryptoService.importPublicECDHKey(contactos[idAmigo].publicKey!));
-            this.sharedKeys[idAmigo] = sharedKey; return sharedKey;
+            const sharedKey = await CryptoService.deriveSharedSecret(myPrivKey, await CryptoService.importPublicECDHKey(contact.publicKey!));
+            
+            this.sharedKeys[idAmigo] = sharedKey;
+            
+            // Exportar y guardar para que otras terminales lo reciban vía SYNC
+            const exportedSecret = await CryptoService.exportAESKey(sharedKey);
+            await BitChatAuth.guardarContacto(idAmigo, contact.tokenCuartaCredencial, contact.insecure, contact.publicKey, contact.syncAllowedDevices, exportedSecret);
+
+            return sharedKey;
         } catch (e) { return null; }
     },
 
@@ -251,7 +273,7 @@ export const PeerService: IPeerService = {
                         accountCreatedAt: paquete.createdAt
                     });
 
-                    // Si somos más antiguos, compartimos nuestras credenciales (llaves)
+                    // Si somos más antiguos, compartimos nuestras credenciales (llaves de identidad, pero NO la privada de terminal)
                     const soyMasAntiguo = !paquete.createdAt || misCreds.createdAt < paquete.createdAt;
                     
                     conn.send({ 
@@ -280,11 +302,25 @@ export const PeerService: IPeerService = {
                         accountCreatedAt: paquete.createdAt
                     });
 
-                    // Si nos envían credenciales, es porque el otro dispositivo es el "autorizado" (más antiguo)
+                    // Si nos envían credenciales, adoptamos la identidad pero GENERAMOS llaves de terminal propias
                     if (paquete.creds) {
-                        console.log(`[SYNC] Adoptando credenciales de dispositivo más antiguo (${remoteDeviceId})`);
-                        await DB.setCreds(paquete.creds);
-                        useStore.getState().setMe(paquete.creds);
+                        console.log(`[SYNC] Adoptando identidad de dispositivo antiguo (${remoteDeviceId}). Generando llaves locales...`);
+                        const myNewCreds: Credentials = { ...paquete.creds };
+                        
+                        // No heredamos su llave privada, generamos una única para esta terminal
+                        const keyPair = await CryptoService.generateECDHKeyPair();
+                        myNewCreds.publicKey = await CryptoService.exportKey(keyPair.publicKey);
+                        
+                        const masterKey = useStore.getState().aesKey;
+                        if (masterKey) {
+                            const privKeyJWK = await CryptoService.exportKey(keyPair.privateKey);
+                            const { ciphertext, iv } = await CryptoService.encrypt(masterKey, JSON.stringify(privKeyJWK));
+                            myNewCreds.encryptedPrivateKey = ciphertext;
+                            myNewCreds.privateKeyIv = iv;
+                        }
+
+                        await DB.setCreds(myNewCreds);
+                        useStore.getState().setMe(myNewCreds);
                     }
 
                     if (!this.syncSessions[remoteDeviceId]) {
@@ -428,7 +464,14 @@ export const PeerService: IPeerService = {
 
                 for (const id in contactos) { 
                     console.log(`[SYNC-DEBUG] Importando/Actualizando contacto: ${id}`);
-                    await BitChatAuth.guardarContacto(id, contactos[id].tokenCuartaCredencial, contactos[id].insecure, contactos[id].publicKey, contactos[id].syncAllowedDevices); 
+                    await BitChatAuth.guardarContacto(
+                        id, 
+                        contactos[id].tokenCuartaCredencial, 
+                        contactos[id].insecure, 
+                        contactos[id].publicKey, 
+                        contactos[id].syncAllowedDevices,
+                        contactos[id].sharedSecret
+                    ); 
                     delete this.sharedKeys[id]; 
                 }
 
@@ -565,7 +608,14 @@ export const PeerService: IPeerService = {
                             }
 
                             for (const id in contactos) {
-                                await BitChatAuth.guardarContacto(id, contactos[id].tokenCuartaCredencial, contactos[id].insecure, contactos[id].publicKey, contactos[id].syncAllowedDevices);
+                                await BitChatAuth.guardarContacto(
+                                    id, 
+                                    contactos[id].tokenCuartaCredencial, 
+                                    contactos[id].insecure, 
+                                    contactos[id].publicKey, 
+                                    contactos[id].syncAllowedDevices,
+                                    contactos[id].sharedSecret
+                                );
                                 delete this.sharedKeys[id];
                             }
 
