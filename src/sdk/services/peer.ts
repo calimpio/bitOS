@@ -482,7 +482,7 @@ export const PeerService: IPeerService = {
                     const lastKnownTime = paquete.lastMessageTime || 0;
                     console.log(`[DEBUG-SYNC] Sync Delta: Mensajes > ${new Date(lastKnownTime).toLocaleString()}`);
                     if (paquete.repairMsgIds && paquete.repairMsgIds.length > 0) {
-                        console.log(`[DEBUG-SYNC] Solicitud de reparación para ${paquete.repairMsgIds.length} mensajes.`);
+                        console.log(`[DEBUG-SYNC] Solicitud de reparación para ${paquete.repairMsgIds.length} mensajes específicos.`);
                     }
 
                     const allContactos = await BitChatAuth.obtenerContactos();
@@ -495,18 +495,25 @@ export const PeerService: IPeerService = {
                         if (isAllowed) {
                             filteredContactos[id] = c;
                             allowedChatIds.push(id);
+                        } else {
+                            console.log(`[DEBUG-SYNC] Chat ${id} OMITIDO: Dispositivo no autorizado en 'syncAllowedDevices'.`);
                         }
                     }
 
                     const allMensajes = await DB.getAllMessages();
                     
-                    // Filter: (New messages) OR (Requested for repair)
-                    const deltaMensajes = allMensajes.filter(m => 
-                        (m.time > lastKnownTime) || 
-                        (paquete.repairMsgIds && paquete.repairMsgIds.includes(m.msgId))
-                    );
+                    // Filter: (New messages AND authorized) OR (Specifically requested for repair AND authorized)
+                    const deltaMensajes = allMensajes.filter(m => {
+                        const isAuthorized = allowedChatIds.includes(m.chatId);
+                        if (!isAuthorized) return false;
 
-                    // [REPAIR] Try to decrypt encrypted messages before sending
+                        const isNew = m.time > lastKnownTime;
+                        const needsRepair = paquete.repairMsgIds && paquete.repairMsgIds.includes(m.msgId);
+                        
+                        return isNew || needsRepair;
+                    });
+
+                    // [REPAIR] Try to decrypt encrypted messages before sending if emisor has them locally locked too
                     for (const m of deltaMensajes) {
                         if (m.msg === '[Mensaje Cifrado]' && m.ciphertext && m.iv) {
                             const sharedKey = await this._getSharedKey(m.chatId);
@@ -519,10 +526,8 @@ export const PeerService: IPeerService = {
                         }
                     }
 
-                    const filteredMensajes = deltaMensajes.filter(m => allowedChatIds.includes(m.chatId));
-
-                    console.log(`[DEBUG-SYNC] Enviando ${Object.keys(filteredContactos).length} contactos y ${filteredMensajes.length} mensajes (Delta/Repair).`);
-                    conn.send({ tipo: 'SYNC_DATA', contactos: filteredContactos, mensajes: filteredMensajes });
+                    console.log(`[DEBUG-SYNC] Enviando ${Object.keys(filteredContactos).length} contactos y ${deltaMensajes.length} mensajes (Delta/Repair).`);
+                    conn.send({ tipo: 'SYNC_DATA', contactos: filteredContactos, mensajes: deltaMensajes });
                 } else {
                     console.warn('[DEBUG-SYNC] Intento de sincronización fallido: Password incorrecto.');
                     conn.close();
