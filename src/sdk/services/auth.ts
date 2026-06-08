@@ -61,6 +61,8 @@ export const BitChatAuth: IBitChatAuth = {
         await DB.setCreds(creds);
         useStore.getState().setMe(creds);
         useStore.getState().setAesKey(masterKey);
+        // Ejecutar migración de mensajes
+        DB.migratePlainMessages();
     },
 
     async obtenerMisCredenciales(): Promise<Credentials | null> {
@@ -91,6 +93,8 @@ export const BitChatAuth: IBitChatAuth = {
             const decryptedWitness = await CryptoService.decrypt(masterKey, creds.authWitness, creds.authIv);
             if (decryptedWitness === "BITCHAT_IDENTITY_OK") {
                 useStore.getState().setAesKey(masterKey);
+                // Ejecutar migración de mensajes
+                DB.migratePlainMessages();
                 return true;
             }
         } catch (e) {

@@ -9,7 +9,7 @@ export const DB: IDBService = {
 
     init(): Promise<void> {
         return new Promise((resolve, reject) => {
-            const req = indexedDB.open('bitchat_db', 10);
+            const req = indexedDB.open('bitchat_db', 11);
             req.onupgradeneeded = (e) => {
                 const db = (e.target as IDBOpenDBRequest).result;
                 if (!db.objectStoreNames.contains('messages')) {
@@ -376,11 +376,23 @@ export const DB: IDBService = {
                 const cursor = (e.target as IDBRequest).result;
                 if (cursor) {
                     const m = cursor.value as Message;
-                    if (!m.iv) {
+                    
+                    // CASO 1: Mensaje en texto plano (sin IV)
+                    // CASO 2: Mensaje con cifrado P2P (tiene IV y ciphertext de transporte)
+                    // CASO 3: Mensaje que era ilegible pero ahora tenemos la llave (ya manejado por addMessage en reparación)
+                    
+                    const isPlain = !m.iv;
+                    const isP2PTransport = !!m.ciphertext && m.msg !== '[Mensaje Cifrado]';
+
+                    if (isPlain || isP2PTransport) {
+                        // Si era P2PTransport, ya está descifrado en m.msg gracias a PeerService
+                        // Si era Plain, el texto está directamente en m.msg
                         const encrypted = await this.encryptMsg(m.msg);
                         m.msg = encrypted.ciphertext;
                         m.iv = encrypted.iv;
+                        delete m.ciphertext; // Limpiamos rastro de transporte
                         cursor.update(m);
+                        console.log(`[MIGRACIÓN] Mensaje ${m.msgId} migrado a persistencia unificada.`);
                     }
                     cursor.continue();
                 } else {
