@@ -43,6 +43,63 @@ export const DriveView: React.FC = () => {
     // Repository settings/rename state
     const [repoRenameValue, setRepoRenameValue] = useState('');
 
+    // Custom popup state (replacing native alert/confirm/prompt)
+    const [popup, setPopup] = useState<{
+        type: 'alert' | 'confirm' | 'prompt';
+        title: string;
+        message: string;
+        placeholder?: string;
+        onConfirm?: (value?: string) => void;
+        onCancel?: () => void;
+    } | null>(null);
+    const [popupPromptValue, setPopupPromptValue] = useState('');
+
+    const showAlert = (title: string, message: string, onConfirm?: () => void) => {
+        setPopup({
+            type: 'alert',
+            title,
+            message,
+            onConfirm: () => {
+                setPopup(null);
+                if (onConfirm) onConfirm();
+            }
+        });
+    };
+
+    const showConfirm = (title: string, message: string, onConfirm: () => void, onCancel?: () => void) => {
+        setPopup({
+            type: 'confirm',
+            title,
+            message,
+            onConfirm: () => {
+                setPopup(null);
+                onConfirm();
+            },
+            onCancel: () => {
+                setPopup(null);
+                if (onCancel) onCancel();
+            }
+        });
+    };
+
+    const showPrompt = (title: string, message: string, placeholder: string, onConfirm: (val: string) => void, onCancel?: () => void) => {
+        setPopupPromptValue('');
+        setPopup({
+            type: 'prompt',
+            title,
+            message,
+            placeholder,
+            onConfirm: (val) => {
+                setPopup(null);
+                onConfirm(val || '');
+            },
+            onCancel: () => {
+                setPopup(null);
+                if (onCancel) onCancel();
+            }
+        });
+    };
+
     const loadRepositories = async () => {
         const list = await DriveService.listRepositories();
         setRepositories(list);
@@ -94,7 +151,7 @@ export const DriveView: React.FC = () => {
     }, [activeRepo, activeBranch]);
 
     const handleCreateRepository = async () => {
-        if (!newRepoName.trim()) return alert("El nombre es requerido");
+        if (!newRepoName.trim()) return showAlert("Error", "El nombre es requerido");
         try {
             const repo = await DriveService.createRepository(newRepoName.trim());
             setNewRepoName('');
@@ -103,13 +160,13 @@ export const DriveView: React.FC = () => {
             setActiveRepo(repo);
             setActiveBranch('main');
         } catch (e) {
-            alert("Error al crear el repositorio");
+            showAlert("Error", "Error al crear el repositorio");
         }
     };
 
     const handleCreateBranch = async () => {
         if (!activeRepo) return;
-        if (!newBranchName.trim()) return alert("El nombre es requerido");
+        if (!newBranchName.trim()) return showAlert("Error", "El nombre es requerido");
         try {
             const cleanName = newBranchName.trim().replace(/\s+/g, '-');
             await DriveService.createBranch(activeRepo.repoId, cleanName);
@@ -117,12 +174,12 @@ export const DriveView: React.FC = () => {
             setShowCreateBranch(false);
             await loadRepoData(activeRepo, cleanName);
         } catch (e: any) {
-            alert(e.message || "Error al crear la rama");
+            showAlert("Error", e.message || "Error al crear la rama");
         }
     };
 
     const handleSaveFile = () => {
-        if (!editorPath.trim()) return alert("La ruta del archivo es requerida");
+        if (!editorPath.trim()) return showAlert("Error", "La ruta del archivo es requerida");
         
         const path = editorPath.trim();
         const updated = [...workingFiles];
@@ -134,7 +191,7 @@ export const DriveView: React.FC = () => {
                 // If they changed the name to something else that already exists, warn them
                 const collisionIdx = updated.findIndex((f, i) => f.path === path && i !== idx);
                 if (collisionIdx !== -1) {
-                    return alert("Ya existe un archivo con ese nombre.");
+                    return showAlert("Error", "Ya existe un archivo con ese nombre.");
                 }
                 updated[idx].path = path;
                 updated[idx].content = editorContent;
@@ -152,11 +209,11 @@ export const DriveView: React.FC = () => {
         setWorkingFiles(updated);
         setSelectedFilePath(path);
         setIsCreatingNewFile(false);
-        alert("Archivo guardado en el directorio de trabajo.");
+        showAlert("Guardado", "Archivo guardado en el directorio de trabajo.");
     };
 
     const handleDeleteFile = (path: string) => {
-        if (confirm(`¿Eliminar ${path} del directorio de trabajo?`)) {
+        showConfirm("Eliminar archivo", `¿Eliminar ${path} del directorio de trabajo?`, () => {
             const updated = workingFiles.filter(f => f.path !== path);
             setWorkingFiles(updated);
             if (selectedFilePath === path) {
@@ -164,7 +221,7 @@ export const DriveView: React.FC = () => {
                 setEditorPath('');
                 setEditorContent('');
             }
-        }
+        });
     };
 
     const handleRenameFileClick = (path: string) => {
@@ -176,7 +233,7 @@ export const DriveView: React.FC = () => {
     const handleRenameFileSubmit = () => {
         if (!fileToRename) return;
         const newPath = renameValue.trim();
-        if (!newPath) return alert("El nombre/ruta del archivo no puede estar vacío");
+        if (!newPath) return showAlert("Error", "El nombre/ruta del archivo no puede estar vacío");
         if (newPath === fileToRename) {
             setShowRenameModal(false);
             return;
@@ -185,7 +242,7 @@ export const DriveView: React.FC = () => {
         const updated = [...workingFiles];
         const collisionIdx = updated.findIndex(f => f.path === newPath);
         if (collisionIdx !== -1) {
-            return alert("Ya existe un archivo con ese nombre.");
+            return showAlert("Error", "Ya existe un archivo con ese nombre.");
         }
 
         const idx = updated.findIndex(f => f.path === fileToRename);
@@ -199,50 +256,57 @@ export const DriveView: React.FC = () => {
             setShowRenameModal(false);
             setFileToRename(null);
             setRenameValue('');
-            alert("Archivo renombrado con éxito.");
+            showAlert("Éxito", "Archivo renombrado con éxito.");
         }
     };
 
     const handleRenameRepo = async () => {
         if (!activeRepo) return;
         const newName = repoRenameValue.trim();
-        if (!newName) return alert("El nombre del repositorio no puede estar vacío");
+        if (!newName) return showAlert("Error", "El nombre del repositorio no puede estar vacío");
         try {
             await DriveService.renameRepository(activeRepo.repoId, newName);
             setActiveRepo({ ...activeRepo, name: newName });
             await loadRepositories();
-            alert("Repositorio renombrado con éxito.");
+            showAlert("Éxito", "Repositorio renombrado con éxito.");
         } catch (e: any) {
-            alert(e.message || "Error al renombrar el repositorio");
+            showAlert("Error", e.message || "Error al renombrar el repositorio");
         }
     };
 
     const handleDiscardLocalChanges = () => {
         if (!activeRepo) return;
-        if (confirm("¿Estás seguro de que deseas descartar todos los cambios locales no confirmados? Esta acción es irreversible.")) {
+        showConfirm("Descartar cambios", "¿Estás seguro de que deseas descartar todos los cambios locales no confirmados? Esta acción es irreversible.", () => {
             setWorkingFiles(JSON.parse(JSON.stringify(committedFiles)));
             setSelectedFilePath(null);
             setEditorPath('');
             setEditorContent('');
-            alert("Se han descartado los cambios locales.");
-        }
+            showAlert("Descartado", "Se han descartado los cambios locales.");
+        });
     };
 
     const handleDeleteRepo = async () => {
         if (!activeRepo) return;
-        const confirm1 = confirm("¿Estás seguro de que deseas eliminar este repositorio y todas sus ramas de forma permanente?");
-        if (!confirm1) return;
-        const confirm2 = confirm("Esta acción borrará permanentemente todos tus archivos y el historial de commits. ¿Estás absolutamente seguro?");
-        if (!confirm2) return;
+        
+        showPrompt(
+            "Confirmar Eliminación", 
+            `¿Estás seguro de que deseas eliminar este repositorio y todas sus ramas de forma permanente?\n\nEsta acción es irreversible.\n\nPor favor, escribe o pega el ID del repositorio para confirmar la eliminación:`,
+            activeRepo.repoId,
+            async (userInput) => {
+                if (userInput.trim() !== activeRepo.repoId) {
+                    return showAlert("Error", "El ID del repositorio no coincide. Operación cancelada.");
+                }
 
-        try {
-            await DriveService.deleteRepository(activeRepo.repoId);
-            setActiveRepo(null);
-            await loadRepositories();
-            alert("Repositorio eliminado con éxito.");
-        } catch (e: any) {
-            alert(e.message || "Error al eliminar el repositorio");
-        }
+                try {
+                    await DriveService.deleteRepository(activeRepo.repoId);
+                    setActiveRepo(null);
+                    await loadRepositories();
+                    showAlert("Éxito", "Repositorio eliminado con éxito.");
+                } catch (e: any) {
+                    showAlert("Error", e.message || "Error al eliminar el repositorio");
+                }
+            }
+        );
     };
 
     const handleSelectFile = (path: string) => {
@@ -297,7 +361,7 @@ export const DriveView: React.FC = () => {
                     setEditorContent(lastFile.content);
                     setIsCreatingNewFile(false);
                     setActiveTab('editor');
-                    alert(`${total} archivo(s) subido(s) al directorio de trabajo.`);
+                    showAlert("Subida exitosa", `${total} archivo(s) subido(s) al directorio de trabajo.`);
                 }
             };
 
@@ -321,19 +385,23 @@ export const DriveView: React.FC = () => {
 
     const handleCommit = async () => {
         if (!activeRepo) return;
-        if (!commitMessage.trim()) return alert("El mensaje del commit es requerido");
-        if (workingFiles.length === 0) {
-            const proceed = confirm("El commit estará vacío. ¿Continuar?");
-            if (!proceed) return;
-        }
+        if (!commitMessage.trim()) return showAlert("Error", "El mensaje del commit es requerido");
 
-        try {
-            await DriveService.createCommit(activeRepo.repoId, activeBranch, commitMessage.trim(), workingFiles);
-            setCommitMessage('');
-            alert("Commit creado con éxito.");
-            await loadRepoData(activeRepo, activeBranch);
-        } catch (e: any) {
-            alert(e.message || "Error al procesar el commit");
+        const executeCommit = async () => {
+            try {
+                await DriveService.createCommit(activeRepo.repoId, activeBranch, commitMessage.trim(), workingFiles);
+                setCommitMessage('');
+                showAlert("Éxito", "Commit creado con éxito.");
+                await loadRepoData(activeRepo, activeBranch);
+            } catch (e: any) {
+                showAlert("Error", e.message || "Error al procesar el commit");
+            }
+        };
+
+        if (workingFiles.length === 0) {
+            showConfirm("Commit Vacío", "El commit estará vacío. ¿Continuar?", executeCommit);
+        } else {
+            await executeCommit();
         }
     };
 
@@ -733,7 +801,7 @@ export const DriveView: React.FC = () => {
                                                         setSelectedFilePath(null);
                                                         setEditorPath('');
                                                         setEditorContent('');
-                                                        alert(`Restaurados archivos del commit ${commit.commitId.substring(0, 7)} en tu directorio de trabajo.`);
+                                                        showAlert("Restauración", `Restaurados archivos del commit ${commit.commitId.substring(0, 7)} en tu directorio de trabajo.`);
                                                     }
                                                 }}
                                                 style={{ fontSize: '10px', padding: '4px 8px' }}
@@ -758,9 +826,24 @@ export const DriveView: React.FC = () => {
                                 <Card style={{ padding: '20px', background: 'rgba(255,255,255,0.01)' }}>
                                     <h4 style={{ margin: '0 0 12px 0', color: 'var(--accent-blue)' }}>📋 Información del Repositorio</h4>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                             <span style={{ color: 'var(--text-dim)' }}>ID del Repositorio:</span>
-                                            <span style={{ fontFamily: 'monospace', userSelect: 'all' }}>{activeRepo.repoId}</span>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <span style={{ fontFamily: 'monospace', fontSize: '12px', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border)' }}>
+                                                    {activeRepo.repoId}
+                                                </span>
+                                                <Button 
+                                                    variant="ghost" 
+                                                    className="btn-sm" 
+                                                    style={{ padding: '4px 8px', fontSize: '11px', whiteSpace: 'nowrap' }}
+                                                    onClick={() => {
+                                                        navigator.clipboard.writeText(activeRepo.repoId);
+                                                        showAlert("Copiado", "El ID del repositorio se ha copiado al portapapeles.");
+                                                    }}
+                                                >
+                                                    📋 Copiar
+                                                </Button>
+                                            </div>
                                         </div>
                                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                             <span style={{ color: 'var(--text-dim)' }}>Creado el:</span>
@@ -857,6 +940,62 @@ export const DriveView: React.FC = () => {
                     <Button style={{ flex: '1' }} onClick={handleRenameFileSubmit}>Renombrar</Button>
                 </div>
             </Modal>
+
+            {/* Custom popup modal */}
+            {popup && (
+                <Modal 
+                    active={true} 
+                    title={popup.title} 
+                    onClose={() => {
+                        if (popup.type === 'alert') {
+                            popup.onConfirm?.();
+                        } else {
+                            popup.onCancel?.();
+                        }
+                    }}
+                >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                        <p style={{ fontSize: '13px', color: 'var(--text-main)', whiteSpace: 'pre-wrap', margin: 0 }}>
+                            {popup.message}
+                        </p>
+                        
+                        {popup.type === 'prompt' && (
+                            <Input 
+                                placeholder={popup.placeholder || ''}
+                                value={popupPromptValue}
+                                onChange={(e) => setPopupPromptValue(e.target.value)}
+                                autoFocus
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        popup.onConfirm?.(popupPromptValue);
+                                    }
+                                }}
+                            />
+                        )}
+                        
+                        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '5px' }}>
+                            {(popup.type === 'confirm' || popup.type === 'prompt') && (
+                                <Button 
+                                    variant="ghost" 
+                                    onClick={() => popup.onCancel?.()}
+                                    style={{ flex: 1 }}
+                                >
+                                    Cancelar
+                                </Button>
+                            )}
+                            <Button 
+                                variant="primary" 
+                                onClick={() => {
+                                    popup.onConfirm?.(popup.type === 'prompt' ? popupPromptValue : undefined);
+                                }}
+                                style={{ flex: 1 }}
+                            >
+                                Aceptar
+                            </Button>
+                        </div>
+                    </div>
+                </Modal>
+            )}
         </div>
     );
 };
