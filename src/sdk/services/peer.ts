@@ -124,6 +124,7 @@ export const PeerService: IPeerService = {
     startBackgroundSync(): void {
         if (this.syncInterval) clearInterval(this.syncInterval);
         this.syncInterval = setInterval(async () => {
+            if (!useStore.getState().aesKey) return; // Si la terminal está bloqueada, no hacer nada
             const misCreds = await BitChatAuth.obtenerMisCredenciales();
             if (!misCreds) return;
             const pending = await DB.getPendingMessages();
@@ -160,6 +161,7 @@ export const PeerService: IPeerService = {
     },
 
     async buscarDispositivos(forceAll: boolean = false): Promise<void> {
+        if (!useStore.getState().aesKey) return; // Si la terminal está bloqueada, no hacer nada
         const misCreds = await BitChatAuth.obtenerMisCredenciales();
         if (!misCreds) return;
         console.log('Iniciando búsqueda de terminales autorizadas...');
