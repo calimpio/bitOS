@@ -69,8 +69,8 @@ export const DB: IDBService = {
     async addDevice(device: Device): Promise<void> {
         const now = Date.now();
         if (!device.createdAt) device.createdAt = now;
-        device.updatedAt = now;
-        device.lastSeen = now;
+        if (!device.updatedAt) device.updatedAt = now;
+        if (!device.lastSeen) device.lastSeen = now;
 
         return new Promise((resolve) => {
             if (!this.db) return resolve();

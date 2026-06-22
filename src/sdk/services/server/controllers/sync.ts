@@ -49,7 +49,7 @@ export const syncController = {
             }
         }
 
-        const payload = { contactos: filteredContactos, mensajes: deltaMensajes };
+        const payload = { contactos: filteredContactos, mensajes: deltaMensajes, devices: allDevices };
         const vault = await VaultService.encryptForE2EE('SYNC_PAYLOAD', payload, requestingDevice.publicKey || ctx.misCreds!.publicKey!);
         
         await ctx.response({ vault });
@@ -60,11 +60,13 @@ export const syncController = {
         const p = validateFields<IPaqueteSyncData>(ctx.paquete, [], ['contactos', 'mensajes', 'vault']);
         let contactos: ContactMap = p.contactos || {};
         let mensajes: Message[] = p.mensajes || [];
+        let devicesList: any[] = [];
 
         if (p.vault) {
-            const decrypted = await VaultService.decryptFromE2EE<{ contactos: ContactMap, mensajes: Message[] }>(p.vault);
+            const decrypted = await VaultService.decryptFromE2EE<{ contactos: ContactMap, mensajes: Message[], devices?: any[] }>(p.vault);
             contactos = decrypted.contactos;
             mensajes = decrypted.mensajes;
+            devicesList = decrypted.devices || [];
         }
 
         for (const id in contactos) { 
@@ -86,5 +88,14 @@ export const syncController = {
             }
         }
         await DB.importMessages(validados);
+
+        const localDevices = await DB.getDevices();
+        for (const dev of devicesList) {
+            if (dev.deviceId === PeerService.localDeviceId) continue;
+            const existing = localDevices.find(d => d.deviceId === dev.deviceId);
+            if (!existing || (dev.updatedAt || 0) > (existing.updatedAt || 0)) {
+                await DB.addDevice(dev);
+            }
+        }
     }
 };

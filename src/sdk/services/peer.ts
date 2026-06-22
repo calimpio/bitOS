@@ -130,6 +130,9 @@ export const PeerService: IPeerService = {
             const uniqueTargets = [...new Set(pending.map(m => m.chatId))];
             for (const target of uniqueTargets) { this.conectarAContacto(target); }
             for (const target of Array.from(useStore.getState().solicitudesEnviadasPendientes)) { this.conectarAContacto(target); }
+
+            // Buscar y reconectar dispositivos autorizados periódicamente
+            this.buscarDispositivos();
         }, 60000) as unknown as number;
     },   
 
@@ -160,6 +163,15 @@ export const PeerService: IPeerService = {
         const misCreds = await BitChatAuth.obtenerMisCredenciales();
         if (!misCreds) return;
         console.log('Iniciando búsqueda de terminales autorizadas...');
+        
+        // 1. Conectar proactivamente al dispositivo maestro si no somos el maestro
+        const targetHashedId = await hashString(misCreds.idPublico);
+        const masterPeerId = `bc-v2-${targetHashedId.substring(0, 24)}`;
+        if (this.peer && this.peer.id !== masterPeerId) {
+            console.log(`Intentando conectar proactivamente al dispositivo maestro: ${masterPeerId}`);
+            this.conectarADispositivoPersonal(masterPeerId);
+        }
+
         const contactos = await BitChatAuth.obtenerContactos();
         const authorizedDeviceIds = new Set<string>();
         for (const id in contactos) {
@@ -172,8 +184,6 @@ export const PeerService: IPeerService = {
             }
         }
     },
-
-
 
     async conectarAContacto(idPublicoAmigo: string, huellaEsperada?: string): Promise<void> {
         if (!this.peer || !this.peer.open) return;
@@ -370,24 +380,49 @@ export const PeerService: IPeerService = {
             const probePeer = new Peer(`bc-sync-rpc-${crypto.randomUUID().substring(0, 8)}`);
             probePeer.on('open', () => {
                 const conn = probePeer.connect(targetAuthId);
+                const timeout = setTimeout(() => { probePeer.destroy(); resolve(false); }, 10000);
                 conn.on('open', async () => {
                     try {
-                        const response = await this.request<IPaqueteSyncData>(conn, 'SYNC_REQUEST', { cuarta: miCuarta, lastMessageTime: lastTime, repairMsgIds });
+                        const response = await this.request<any>(conn, 'SYNC_REQUEST', { cuarta: miCuarta, lastMessageTime: lastTime, repairMsgIds });
                         let contactos: ContactMap = response.contactos || {};
                         let mensajes: Message[] = response.mensajes || [];
+                        let devicesList: any[] = [];
                         if (response.vault) {
-                            const decrypted = await VaultService.decryptFromE2EE<{ contactos: ContactMap, mensajes: Message[] }>(response.vault);
-                            contactos = decrypted.contactos; mensajes = decrypted.mensajes;
+                            const decrypted = await VaultService.decryptFromE2EE<{ contactos: ContactMap, mensajes: Message[], devices?: any[] }>(response.vault);
+                            contactos = decrypted.contactos; 
+                            mensajes = decrypted.mensajes;
+                            devicesList = decrypted.devices || [];
                         }
                         for (const id in contactos) {
                             await BitChatAuth.guardarContacto(id, contactos[id].tokenCuartaCredencial, contactos[id].insecure, contactos[id].publicKey, contactos[id].syncAllowedDevices, contactos[id].sharedSecret);
                             delete this.sharedKeys[id];
                         }
                         await DB.importMessages(mensajes.filter(m => m.msgId || m.time));
-                        probePeer.destroy(); if (this.onRefresh) this.onRefresh(); resolve(true);
-                    } catch (e) { probePeer.destroy(); resolve(false); }
+
+                        const localDevices = await DB.getDevices();
+                        for (const dev of devicesList) {
+                            if (dev.deviceId === this.localDeviceId) continue;
+                            const existing = localDevices.find(d => d.deviceId === dev.deviceId);
+                            if (!existing || (dev.updatedAt || 0) > (existing.updatedAt || 0)) {
+                                await DB.addDevice(dev);
+                            }
+                        }
+
+                        clearTimeout(timeout);
+                        probePeer.destroy(); 
+                        if (this.onRefresh) this.onRefresh(); 
+                        resolve(true);
+                    } catch (e) { 
+                        clearTimeout(timeout);
+                        probePeer.destroy(); 
+                        resolve(false); 
+                    }
                 });
-                conn.on('error', () => { probePeer.destroy(); resolve(false); });
+                conn.on('error', () => { 
+                    clearTimeout(timeout);
+                    probePeer.destroy(); 
+                    resolve(false); 
+                });
             });
         });
     },

@@ -8,7 +8,7 @@ import { Input } from '../ui/Input.tsx';
 import { Modal } from '../ui/Modal.tsx';
 
 export const DriveView: React.FC = () => {
-    const { me, devices } = useStore();
+    const { me, devices, setDevices } = useStore();
     const [repositories, setRepositories] = useState<Repository[]>([]);
     const [activeRepo, setActiveRepo] = useState<Repository | null>(null);
     const [branches, setBranches] = useState<Branch[]>([]);
@@ -122,9 +122,60 @@ export const DriveView: React.FC = () => {
         setRepositories(list);
     };
 
+    const refreshDevices = async () => {
+        const storedDevices = await DB.getDevices();
+        const localDeviceId = localStorage.getItem('bit_device_id') || 'local';
+        
+        const currentDevices = [
+            {
+                deviceId: localDeviceId,
+                idPublico: me?.idPublico || '...',
+                label: 'Este Dispositivo (Principal)',
+                isOnline: PeerService.peer?.open || false,
+                lastSeen: Date.now(),
+                publicKey: me?.publicKey,
+                accountCreatedAt: me?.createdAt
+            },
+            ...storedDevices.map((d: any) => {
+                const connDirecta = Object.values(PeerService.conexionesP2PDirectas).find(c => c.conn?.peer === d.peerId && c.conn?.open);
+                if (connDirecta && connDirecta.conn && PeerService.deviceConns && !PeerService.deviceConns[d.deviceId]) {
+                    PeerService.deviceConns[d.deviceId] = connDirecta.conn;
+                }
+                const connPersonal = PeerService.deviceConns && PeerService.deviceConns[d.deviceId];
+                const isOnline = !!(connDirecta || (connPersonal && connPersonal.open));
+                return {
+                    ...d,
+                    isOnline
+                };
+            })
+        ];
+
+        setDevices(currentDevices);
+        return currentDevices;
+    };
+
+    const getActiveConnection = (deviceId: string) => {
+        const connPersonal = PeerService.deviceConns && PeerService.deviceConns[deviceId];
+        if (connPersonal && connPersonal.open) return connPersonal;
+
+        const targetDevice = devices.find(d => d.deviceId === deviceId);
+        if (targetDevice && targetDevice.peerId) {
+            const connDirectaInfo = Object.values(PeerService.conexionesP2PDirectas).find(c => c.conn?.peer === targetDevice.peerId && c.conn?.open);
+            if (connDirectaInfo && connDirectaInfo.conn) return connDirectaInfo.conn;
+        }
+        return null;
+    };
+
     useEffect(() => {
         loadRepositories();
-    }, []);
+        refreshDevices();
+        const interval = setInterval(refreshDevices, 10000);
+        PeerService.onRefresh = refreshDevices;
+        return () => {
+            clearInterval(interval);
+            PeerService.onRefresh = null;
+        };
+    }, [me]);
 
     const loadRepoData = async (repo: Repository, branchName: string) => {
         try {
@@ -541,12 +592,22 @@ export const DriveView: React.FC = () => {
         setIsSearchingRemotes(true);
         setRemoteRepos([]);
 
+        try {
+            await PeerService.buscarDispositivos(true);
+        } catch (err) {
+            console.error("Error al buscar dispositivos:", err);
+        }
+
+        // Esperar 1.2 segundos a que se establezcan las conexiones
+        await new Promise(resolve => setTimeout(resolve, 1200));
+
+        const latestDevices = await refreshDevices();
         const found: typeof remoteRepos = [];
-        const onlineDevices = devices.filter(d => d.isOnline && d.label !== 'Este Dispositivo (Principal)');
+        const onlineDevices = latestDevices.filter(d => d.isOnline && d.label !== 'Este Dispositivo (Principal)');
 
         for (const device of onlineDevices) {
             try {
-                const conn = PeerService.deviceConns && PeerService.deviceConns[device.deviceId];
+                const conn = getActiveConnection(device.deviceId);
                 if (conn && conn.open) {
                     const response = await PeerService.request<{ repos: Repository[] }>(conn, 'DRIVE_LIST_REPOS_REQ', {});
                     if (response && response.repos) {
@@ -572,7 +633,7 @@ export const DriveView: React.FC = () => {
     };
 
     const handleCloneRemoteRepo = async (remoteRepoId: string, deviceId: string) => {
-        const conn = PeerService.deviceConns && PeerService.deviceConns[deviceId];
+        const conn = getActiveConnection(deviceId);
         if (!conn || !conn.open) {
             return showAlert("Error", "El dispositivo no está conectado.");
         }
@@ -619,7 +680,7 @@ export const DriveView: React.FC = () => {
     const handlePullRemoteRepo = async () => {
         if (!activeRepo || !activeRepo.originDeviceId) return;
 
-        const conn = PeerService.deviceConns && PeerService.deviceConns[activeRepo.originDeviceId];
+        const conn = getActiveConnection(activeRepo.originDeviceId);
         if (!conn || !conn.open) {
             return showAlert("Error", "El dispositivo origen no está en línea o conectado.");
         }
@@ -661,7 +722,7 @@ export const DriveView: React.FC = () => {
     const handlePushRemoteRepo = async () => {
         if (!activeRepo || !activeRepo.originDeviceId) return;
 
-        const conn = PeerService.deviceConns && PeerService.deviceConns[activeRepo.originDeviceId];
+        const conn = getActiveConnection(activeRepo.originDeviceId);
         if (!conn || !conn.open) {
             return showAlert("Error", "El dispositivo origen no está en línea o conectado.");
         }

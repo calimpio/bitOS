@@ -26,6 +26,9 @@ export const DevicesView: React.FC = () => {
             },
             ...storedDevices.map((d: any) => {
                 const connDirecta = Object.values(PeerService.conexionesP2PDirectas).find(c => c.conn?.peer === d.peerId && c.conn?.open);
+                if (connDirecta && connDirecta.conn && PeerService.deviceConns && !PeerService.deviceConns[d.deviceId]) {
+                    PeerService.deviceConns[d.deviceId] = connDirecta.conn;
+                }
                 const connPersonal = PeerService.deviceConns && PeerService.deviceConns[d.deviceId];
                 const isOnline = !!(connDirecta || (connPersonal && connPersonal.open));
                 return {
