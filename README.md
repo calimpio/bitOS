@@ -8,7 +8,7 @@ Esta versión consolida el ecosistema en un entorno TypeScript Local-First modul
 
 ### 🌐 Demo y Acceso Rápido
 Puedes abrir la terminal soberana en producción directamente desde tu navegador en el siguiente enlace de GitHub Pages:
-👉 **[Abrir bitOS Standalone Terminal (bitos.html)](https://calimpio.github.io/bitos/bitos.html)**
+👉 **[Abrir bitOS Standalone Terminal (bitos.html)](https://calimpio.github.io/bitOS/bitos.html)**
 
 ---
 
